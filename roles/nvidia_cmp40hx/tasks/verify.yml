@@ -1,0 +1,92 @@
+---
+# Read-only checks. Safe in check mode and without root (uses sysfs, modinfo,
+# nvidia-smi and the kernel journal, which the adm group can read).
+- name: Collect CMP 40HX unlock state
+  ansible.builtin.shell: |
+    set -u
+    {
+    gpu={{ cmp40hx_gpu_bdf }}; rp={{ cmp40hx_root_port_bdf }}
+    next=$(readlink /boot/vmlinuz 2>/dev/null | sed 's/^vmlinuz-//')
+    echo "running_kernel=$(uname -r)"
+    echo "next_boot_kernel=${next:-unknown}"
+    echo "module_running=$(modinfo -F filename nvidia 2>/dev/null)"
+    echo "module_next_boot=$( [ -n "$next" ] && modinfo -k "$next" -F filename nvidia 2>/dev/null)"
+    echo "module_version=$(modinfo -F version nvidia 2>/dev/null)"
+    echo "gpu_link=$(cat /sys/bus/pci/devices/$gpu/current_link_speed 2>/dev/null) x$(cat /sys/bus/pci/devices/$gpu/current_link_width 2>/dev/null)"
+    echo "root_port_link=$(cat /sys/bus/pci/devices/$rp/current_link_speed 2>/dev/null) x$(cat /sys/bus/pci/devices/$rp/current_link_width 2>/dev/null)"
+    echo "bar1_total=$(nvidia-smi -q 2>/dev/null | awk '/BAR1 Memory Usage/{f=1} f&&/Total/{print $3,$4; exit}')"
+    echo "gen2_driver_log=$( { journalctl -k -b -o cat; dmesg; } 2>/dev/null | grep -oE 'CMP40_PCIE_GEN2_V2: RETRAIN_[A-Z]+ status=[0-9a-f]+' | tail -n1)"
+    echo "compute_unlock_log=$( { journalctl -k -b -o cat; dmesg; } 2>/dev/null | grep -oE 'CMP40_GSP_READY_V551: .*ss0=0x[0-9a-f]+' | tail -n1)"
+    echo "retrain_unit=$(systemctl is-enabled cmp40hx-gen2-retrain.service 2>/dev/null)/$(systemctl is-active cmp40hx-gen2-retrain.service 2>/dev/null)"
+    echo "retrain_log=$(journalctl -b -t cmp40hx-gen2-retrain -o cat 2>/dev/null | tail -n1)"
+    echo "held_packages=$(apt-mark showhold 2>/dev/null | tr '\n' ' ')"
+    } | python3 -c 'import sys, json; print(json.dumps(dict(l.rstrip("\n").split("=", 1) for l in sys.stdin if "=" in l)))'
+  args:
+    executable: /bin/bash
+  register: cmp40hx_verify_raw
+  changed_when: false
+  check_mode: false
+  become: false
+
+- name: Parse unlock state
+  ansible.builtin.set_fact:
+    cmp40hx_state: "{{ cmp40hx_verify_raw.stdout | from_json }}"
+
+- name: Evaluate unlock state
+  ansible.builtin.set_fact:
+    cmp40hx_checks:
+      patched_module_loaded: "{{ 'updates/cmpunlocker/' in cmp40hx_state.module_running }}"
+      patched_module_for_next_boot: "{{ 'updates/cmpunlocker/' in cmp40hx_state.module_next_boot }}"
+      bar1_8gib: "{{ cmp40hx_state.bar1_total is search('^8192') }}"
+      link_gen2: "{{ cmp40hx_state.gpu_link is search('^5(\\.0)? GT/s') }}"
+      link_x16: "{{ cmp40hx_state.gpu_link is search('x16$') }}"
+
+- name: CMP 40HX unlock report
+  ansible.builtin.debug:
+    msg:
+      - "running kernel {{ cmp40hx_state.running_kernel }}, next boot {{ cmp40hx_state.next_boot_kernel }}"
+      - "nvidia module (running): {{ cmp40hx_state.module_running }} {{ cmp40hx_state.module_version }}"
+      - "nvidia module (next boot): {{ cmp40hx_state.module_next_boot }}"
+      - "GPU link {{ cmp40hx_state.gpu_link }} | root port {{ cmp40hx_state.root_port_link }}"
+      - "BAR1 total: {{ cmp40hx_state.bar1_total }}"
+      - "driver Gen2 log: {{ cmp40hx_state.gen2_driver_log | default('', true) or 'none' }}"
+      - "compute unlock log: {{ cmp40hx_state.compute_unlock_log | default('', true) or 'none' }}"
+      - "retrain unit (enabled/active): {{ cmp40hx_state.retrain_unit }} | last: {{ cmp40hx_state.retrain_log }}"
+      - "apt holds: {{ cmp40hx_state.held_packages | default('', true) or 'NONE' }}"
+      - "checks: {{ cmp40hx_checks }}"
+
+- name: Warn about a next-boot kernel without the patched module
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: /boot/vmlinuz points at {{ cmp40hx_state.next_boot_kernel }}, which has no
+      updates/cmpunlocker/nvidia.ko. The next boot will load the stock module (no unlock).
+      Fix: cd {{ cmpunlocker_dest }} && sudo rm -rf open-gpu-kernel-modules-{{ cmp40hx_driver_upstream_version }}
+      && sudo env KERNEL_UNAME={{ cmp40hx_state.next_boot_kernel }} ./install.sh --no-download
+      (the extracted source is already patched, so it must be re-extracted first),
+      or rerun this playbook with -e cmp40hx_build_unlocker=true.
+  when:
+    - cmp40hx_checks.patched_module_loaded | bool
+    - not (cmp40hx_checks.patched_module_for_next_boot | bool)
+
+- name: Warn when the link is still at Gen1
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: GPU link is {{ cmp40hx_state.gpu_link }}. After a cold boot the retrain unit
+      should have fixed this. To retrain now: sudo cmp40hx-gen2-retrain --stop-services
+      (or by hand: sudo systemctl stop ollama nvidia-persistenced;
+      sudo setpci -s {{ cmp40hx_root_port_bdf }} CAP_EXP+10.w=0020:0020;
+      sudo systemctl start nvidia-persistenced ollama)
+  when:
+    - cmp40hx_checks.patched_module_loaded | bool
+    - not (cmp40hx_checks.link_gen2 | bool)
+
+- name: Enforce unlock state
+  ansible.builtin.assert:
+    that:
+      - cmp40hx_checks.patched_module_loaded | bool
+      - cmp40hx_checks.patched_module_for_next_boot | bool
+      - cmp40hx_checks.bar1_8gib | bool
+      - cmp40hx_checks.link_gen2 | bool
+      - cmp40hx_checks.link_x16 | bool
+    fail_msg: "CMP 40HX unlock incomplete: {{ cmp40hx_checks }}"
+  when: cmp40hx_verify_strict | bool

@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+{% for u in ollama_after_units %}
+After={{ u }}
+{% endfor %}
+
+[Service]
+{% for k, v in ollama_env.items() %}
+Environment="{{ k }}={{ v }}"
+{% endfor %}

@@ -1,0 +1,32 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Rebuild the cmpunlocker-patched NVIDIA modules for a newly installed kernel.
+# Installed in postinst.d and header_postinst.d, so it runs whichever of the
+# kernel image or its headers is configured last. Runs after dkms (which only
+# rebuilds the stock module) and before zz-update-grub.
+# Arguments from run-parts: $1 = kernel version, $2 = image path.
+set -e
+KVER="$1"
+[ -n "$KVER" ] || exit 0
+SRC="{{ cmpunlocker_dest }}"
+[ -x "$SRC/install.sh" ] || { echo "zz-cmpunlocker: $SRC/install.sh missing, skipping" >&2; exit 0; }
+if [ ! -d "/lib/modules/$KVER/build" ]; then
+    echo "zz-cmpunlocker: no headers for $KVER (install linux-headers-$KVER), skipping" >&2
+    exit 0
+fi
+STAMP_WANT="{{ cmpunlocker_version }} {{ cmp40hx_driver_upstream_version }} {{ cmpunlocker_install_args | join(',') }}"
+STAMP="/lib/modules/$KVER/updates/cmpunlocker/.ansible-stamp"
+if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$STAMP_WANT" ]; then
+    exit 0   # already built (this hook runs from both postinst.d and header_postinst.d)
+fi
+echo "zz-cmpunlocker: building patched NVIDIA modules for $KVER"
+cd "$SRC"
+# The extracted source is already patched after any earlier build; start clean
+# from the SHA-256-checked tarball or install.sh fails at "Applying patches".
+rm -rf -- "open-gpu-kernel-modules-{{ cmp40hx_driver_upstream_version }}"
+if env KERNEL_UNAME="$KVER" ./install.sh --no-download {{ cmpunlocker_install_args | join(' ') }}; then
+    echo "$STAMP_WANT" > "$STAMP"
+else
+    echo "zz-cmpunlocker: build FAILED for $KVER; that kernel will boot the stock module" >&2
+fi
+exit 0

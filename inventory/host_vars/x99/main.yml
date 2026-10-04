@@ -1,0 +1,47 @@
+---
+# kabangy: Huananzhi X99-BD4, Xeon E5-2678 v3, Ubuntu 22.04.5, headless.
+# Values below reflect the machine as found on 2026-10-04.
+
+base_hostname: kabangy
+base_timezone: Etc/UTC
+
+# Wi-Fi is the only uplink (enp6s0 is unplugged). Off by default because a bad
+# netplan file can cut the box off; see README "Networking".
+base_wifi_enabled: false
+base_wifi_interface: wls2
+# base_wifi_ssid / base_wifi_psk come from vault.yml
+
+tailscale_ssh: true
+tailscale_hostname: kabangy
+
+# ---- CMP 40HX ----
+cmp40hx_gpu_bdf: "0000:03:00.0"        # card in the 2nd (first full x16) slot
+cmp40hx_root_port_bdf: "0000:00:02.0"  # Haswell-EP root port 2 (8086:2f04)
+
+# Reboot-requiring steps. Leave false for routine runs; turn on with -e on a fresh install.
+cmp40hx_install_driver: false
+cmp40hx_build_unlocker: false
+cmp40hx_purge_old_drivers: false
+
+# Boot-time Gen2 retrain from the root port. "masked" (CAP_EXP+10.w=0020:0020) is the
+# form that was actually run and worked on 2026-10-02 (see after.png).
+cmp40hx_gen2_retrain_enabled: true
+cmp40hx_gen2_retrain_mode: masked
+
+# cap-cmp40hx.service: 300 MHz idle clock lock at boot (saves power). Release it before
+# inference work with `sudo cmp40hx-uncap` (nvidia-smi -rgc); re-apply with `sudo cmp40hx-cap`.
+cmp40hx_idle_clock_cap_enabled: true
+
+# Rebuild cmpunlocker automatically for every newly installed kernel, so an unattended
+# kernel update can't silently boot into the stock (locked) driver.
+cmpunlocker_kernel_hook_enabled: true
+
+# Ollama stays bound to localhost (OLLAMA_HOST unset); not reachable over the tailnet yet.
+
+# ---- Ollama ----
+ollama_version: "0.32.5"
+ollama_models:
+  - gemma4:e4b      # the everyday extraction model
+  - qwen3:8b        # benchmark comparison models
+  - qwen3.5:4b
+  - qwen2.5:3b

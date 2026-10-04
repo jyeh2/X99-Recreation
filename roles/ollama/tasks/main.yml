@@ -1,0 +1,75 @@
+---
+- name: Read installed ollama version
+  ansible.builtin.command: /usr/local/bin/ollama --version
+  register: ollama_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Decide whether to (re)install
+  ansible.builtin.set_fact:
+    ollama_needs_install: >-
+      {{ ollama_installed.rc != 0
+         or (ollama_version | length > 0 and ollama_version not in ollama_installed.stdout) }}
+
+- name: Install ollama
+  when: ollama_needs_install | bool
+  block:
+    - name: Download ollama install script
+      ansible.builtin.get_url:
+        url: "{{ ollama_install_script_url }}"
+        dest: /tmp/ollama-install.sh
+        mode: "0755"
+
+    - name: Run ollama install script
+      ansible.builtin.command: sh /tmp/ollama-install.sh
+      environment:
+        OLLAMA_VERSION: "{{ ollama_version }}"
+      changed_when: true
+
+- name: Add {{ ollama_user_in_group }} to the ollama group
+  ansible.builtin.user:
+    name: "{{ ollama_user_in_group }}"
+    groups: [ollama]
+    append: true
+  when:
+    - ollama_user_in_group | length > 0
+    - not (ansible_check_mode and ollama_needs_install | bool)
+
+- name: Create ollama drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/ollama.service.d
+    state: directory
+    mode: "0755"
+
+- name: Write ollama override
+  ansible.builtin.template:
+    src: override.conf.j2
+    dest: /etc/systemd/system/ollama.service.d/override.conf
+    mode: "0644"
+  register: ollama_override
+
+- name: Reload systemd and restart ollama when the override changed
+  ansible.builtin.systemd_service:
+    name: ollama
+    daemon_reload: true
+    enabled: true
+    state: "{{ 'restarted' if ollama_override is changed else 'started' }}"
+  when: not (ansible_check_mode and ollama_needs_install | bool)
+
+- name: List pulled models
+  ansible.builtin.command: /usr/local/bin/ollama list
+  register: ollama_list
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: false
+
+- name: Pull missing models
+  ansible.builtin.command: /usr/local/bin/ollama pull {{ item }}
+  loop: "{{ ollama_models }}"
+  when: >-
+    (item if ':' in item else item ~ ':latest')
+    not in (ollama_list.stdout_lines | default([]) | map('split') | map('first') | list)
+  become: false
+  changed_when: true

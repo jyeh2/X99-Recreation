@@ -1,0 +1,83 @@
+---
+# PCI addresses. Find them with:
+#   lspci -nn -d 10de:1f0b
+#   basename "$(dirname "$(readlink -f /sys/bus/pci/devices/0000:03:00.0)")"
+cmp40hx_gpu_bdf: "0000:03:00.0"
+cmp40hx_root_port_bdf: "0000:00:02.0"
+
+# ---------------------------------------------------------------- driver
+# Needs a reboot afterwards. Off by default.
+cmp40hx_install_driver: false
+cmp40hx_driver_branch: "610"
+# cmpunlocker patches exactly this upstream source version; the userspace
+# packages must match the patched kernel module.
+cmp40hx_driver_upstream_version: "610.57.04"
+cmp40hx_driver_apt_version: "610.57.04-0ubuntu0.22.04.3"
+cmp40hx_driver_packages:
+  - nvidia-driver-610-open
+  - nvidia-dkms-610-open
+# Optional: install from a directory of cached .debs instead of the Ubuntu
+# archive (the archive drops old point releases). See README.
+cmp40hx_driver_deb_dir: ""
+
+# Removing the old closed driver also needs a reboot. Off by default.
+cmp40hx_purge_old_drivers: false
+cmp40hx_conflicting_packages:
+  - nvidia-driver-580-server
+  - nvidia-dkms-580-server
+  - nvidia-driver-570-server
+  - nvidia-dkms-570-server
+
+# Hold every installed nvidia/libnvidia 610 package so apt and unattended-upgrades
+# can't move the userspace away from the patched 610.57.04 kernel module.
+cmp40hx_hold_driver_packages: true
+cmp40hx_hold_patterns: ['^nvidia-.*610', '^libnvidia-.*610', '^xserver-xorg-video-nvidia-610']
+
+# unattended-upgrades blacklist. Kernels are optional: a new kernel boots
+# without the cmpunlocker modules until install.sh is rerun for it.
+cmp40hx_unattended_blacklist_nvidia: true
+cmp40hx_unattended_blacklist_kernel: false
+
+# ------------------------------------------------------------- cmpunlocker
+# Builds and installs patched modules into /lib/modules/<kver>/updates/cmpunlocker.
+# Needs a FULL power-off afterwards (warm reboot is not enough). Off by default.
+cmp40hx_build_unlocker: false
+cmpunlocker_repo: https://github.com/Cyridd/cmpunlocker.git
+cmpunlocker_version: e4b4d46d2a35c9fe28fa3e9e9f2bfc6de3324192   # v2.0.1, the commit used on 2026-10-02
+cmpunlocker_dest: /opt/cmpunlocker
+cmpunlocker_source_url: "https://github.com/NVIDIA/open-gpu-kernel-modules/archive/refs/tags/{{ cmp40hx_driver_upstream_version }}.tar.gz"
+cmpunlocker_source_sha256: 619d7b5ce1f79c3211afdbf87d02b2174d268b10d005c5b8f994be22299be681
+# Extra install.sh flags, e.g. ['--pcie-diagnostic'] (not used on this box).
+cmpunlocker_install_args: []
+# Kernels to build for. Default: the running kernel plus the one /boot/vmlinuz
+# points at (the kernel the next boot will use).
+cmpunlocker_kernels: []
+# /etc/kernel/postinst.d hook that rebuilds the unlocker for every newly installed
+# kernel (runs install.sh --no-download with KERNEL_UNAME). Not on the original box.
+cmpunlocker_kernel_hook_enabled: false
+
+# ------------------------------------------------------ Gen2 retrain unit
+# The patched driver's own retrain fails on the X99 root port
+# (CMP40_PCIE_GEN2_V2: RETRAIN_FAIL status=1101). This oneshot sets Retrain Link
+# on the root port at boot, before nvidia-persistenced and ollama start.
+cmp40hx_gen2_retrain_enabled: true
+# masked -> setpci CAP_EXP+10.w=0020:0020  only the Retrain Link bit. This is what was
+#           actually run on 2026-10-02 (bash history + ~/cmp40hxpcie2.0unlock/after.png)
+#           and trained the link to 5 GT/s x16.
+# full   -> setpci CAP_EXP+10.w=0020       rewrites all of Link Control (clears ASPM/CCC).
+#           The write-up shows this form, but there's no record of it being run.
+cmp40hx_gen2_retrain_mode: masked
+# Seconds to wait for the patched driver to log its own retrain result.
+cmp40hx_gen2_retrain_wait: 90
+# Services stopped/started around a manual run (`cmp40hx-gen2-retrain --stop-services`).
+cmp40hx_gen2_retrain_services: [ollama, nvidia-persistenced]
+
+# ------------------------------------------------------- idle clock cap
+# Original cap-cmp40hx.service: persistence mode + 300 MHz graphics clock lock.
+# Inference is ~10x slower until `sudo nvidia-smi -rgc`.
+cmp40hx_idle_clock_cap_enabled: false
+cmp40hx_idle_clock_mhz: 300
+
+# ---------------------------------------------------------------- verify
+# Fail the play (instead of warning) when the unlock isn't fully active.
+cmp40hx_verify_strict: false

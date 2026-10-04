@@ -1,0 +1,15 @@
+---
+# Copy to vault.yml, fill in, then encrypt:
+#   cp inventory/host_vars/x99/vault.yml.example inventory/host_vars/x99/vault.yml
+#   .venv/bin/ansible-vault encrypt inventory/host_vars/x99/vault.yml
+# Run playbooks with --ask-vault-pass (or a vault_password_file outside the repo).
+#
+# Never put real values in this .example file.
+
+# Tailscale: one-off or reusable auth key from the admin console. Only used when the
+# node is not already logged in. Leave empty to run `sudo tailscale up` by hand.
+tailscale_authkey: ""
+
+# Wi-Fi (only used when base_wifi_enabled: true)
+base_wifi_ssid: ""
+base_wifi_psk: ""

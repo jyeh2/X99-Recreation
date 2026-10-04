@@ -1,0 +1,29 @@
+---
+# Full run for the X99 inference box.
+#
+#   .venv/bin/ansible-playbook site.yml --ask-become-pass                 # routine, safe
+#   .venv/bin/ansible-playbook site.yml -K -e cmp40hx_install_driver=true  # fresh install, step 1
+#   .venv/bin/ansible-playbook site.yml -K -e cmp40hx_build_unlocker=true  # fresh install, step 2 (then cold boot)
+#   .venv/bin/ansible-playbook site.yml -K --tags verify                   # post-boot checks
+#   .venv/bin/ansible-playbook site.yml -K --tags mistralrs                # optional ~1 h build
+#   .venv/bin/ansible-playbook site.yml -K --tags benchmarks               # optional bench tools
+#
+# Order matters: the driver must exist before the unlocker builds against it,
+# and ollama's unit is ordered after the Gen2 retrain unit.
+
+- name: X99 inference server
+  hosts: inference
+  become: true
+  roles:
+    - role: base
+      tags: [base]
+    - role: tailscale
+      tags: [tailscale]
+    - role: nvidia_cmp40hx
+      tags: [nvidia, cmp40hx]
+    - role: ollama
+      tags: [ollama]
+    - role: mistralrs
+      tags: [never, mistralrs]
+    - role: benchmarks
+      tags: [never, benchmarks]

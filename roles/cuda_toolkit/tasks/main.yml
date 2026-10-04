@@ -1,0 +1,39 @@
+---
+# Only the toolkit (nvcc, cuBLAS headers). Never install `cuda` or `cuda-drivers`
+# from this repo: they pull NVIDIA's own driver packages over the held
+# Ubuntu 610.57.04 driver that cmpunlocker is built against.
+- name: Check for cuda-keyring
+  ansible.builtin.command: dpkg-query -W -f='${Status}' cuda-keyring
+  register: cuda_keyring_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install cuda-keyring
+  when: "'install ok installed' not in cuda_keyring_state.stdout"
+  block:
+    - name: Download cuda-keyring
+      ansible.builtin.get_url:
+        url: "{{ cuda_keyring_url }}"
+        dest: /tmp/cuda-keyring.deb
+        mode: "0644"
+    - name: Install cuda-keyring .deb
+      ansible.builtin.apt:
+        deb: /tmp/cuda-keyring.deb
+      register: cuda_keyring_installed
+
+- name: Install {{ cuda_toolkit_package }}
+  ansible.builtin.apt:
+    name: "{{ cuda_toolkit_package }}"
+    state: present
+    update_cache: "{{ cuda_keyring_installed is changed }}"
+    install_recommends: false
+
+- name: Put CUDA on PATH for login shells
+  ansible.builtin.copy:
+    dest: /etc/profile.d/cuda.sh
+    mode: "0644"
+    content: |
+      # Managed by Ansible (cuda_toolkit role). Was two lines in ~/.bashrc originally.
+      export CUDA_HOME={{ cuda_home }}
+      case ":$PATH:" in *":{{ cuda_home }}/bin:"*) ;; *) export PATH={{ cuda_home }}/bin:$PATH ;; esac

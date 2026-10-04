@@ -1,0 +1,4 @@
+---
+# Login user that owns ~/src, ~/bench, etc.
+homelab_user: james
+homelab_user_home: "/home/{{ homelab_user }}"

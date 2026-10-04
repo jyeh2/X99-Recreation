@@ -1,0 +1,66 @@
+---
+- name: Idle clock cap
+  when: cmp40hx_idle_clock_cap_enabled | bool
+  block:
+    - name: Install cap_cmp40hx.sh
+      ansible.builtin.template:
+        src: cap_cmp40hx.sh.j2
+        dest: /usr/local/bin/cap_cmp40hx.sh
+        mode: "0755"
+
+    - name: Install cmp40hx-uncap / cmp40hx-cap helpers
+      ansible.builtin.copy:
+        dest: "/usr/local/bin/{{ item.name }}"
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          # Managed by homelab-ansible (roles/nvidia_cmp40hx); local edits are overwritten.
+          # {{ item.doc }}
+          set -euo pipefail
+          {{ item.cmd }}
+      loop:
+        - name: cmp40hx-uncap
+          doc: "Release the idle clock lock before inference work (resets graphics clocks)."
+          cmd: 'exec nvidia-smi -rgc "$@"'
+        - name: cmp40hx-cap
+          doc: "Re-apply the {{ cmp40hx_idle_clock_mhz }} MHz idle clock lock."
+          cmd: 'exec /usr/local/bin/cap_cmp40hx.sh'
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Install cap-cmp40hx.service
+      ansible.builtin.template:
+        src: cap-cmp40hx.service.j2
+        dest: /etc/systemd/system/cap-cmp40hx.service
+        mode: "0644"
+      register: cmp40hx_cap_unit
+      notify: Reload systemd
+
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable cap-cmp40hx.service (next boot)
+      ansible.builtin.systemd_service:
+        name: cap-cmp40hx.service
+        enabled: true
+      when: not (ansible_check_mode and cmp40hx_cap_unit is changed)
+
+- name: Disable idle clock cap
+  when: not (cmp40hx_idle_clock_cap_enabled | bool)
+  block:
+    - name: Disable cap-cmp40hx.service
+      ansible.builtin.systemd_service:
+        name: cap-cmp40hx.service
+        enabled: false
+      failed_when: false
+    - name: Remove cap files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/cap-cmp40hx.service
+        - /usr/local/bin/cap_cmp40hx.sh
+        - /etc/motd.d/cap-cmp40hx
+        - /usr/local/bin/cmp40hx-uncap
+        - /usr/local/bin/cmp40hx-cap
+      notify: Reload systemd

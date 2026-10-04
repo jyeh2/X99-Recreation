@@ -1,0 +1,4 @@
+# {{ ansible_managed }}
+{% for k, v in base_sysctl.items() %}
+{{ k }} = {{ v }}
+{% endfor %}

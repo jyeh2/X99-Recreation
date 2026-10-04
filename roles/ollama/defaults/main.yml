@@ -1,0 +1,22 @@
+---
+# Pin to the version that was running on 2026-10-04. Empty = whatever install.sh ships.
+ollama_version: "0.32.5"
+ollama_install_script_url: https://ollama.com/install.sh
+
+# Written to /etc/systemd/system/ollama.service.d/override.conf.
+# OLLAMA_MAX_LOADED_MODELS=1: one model resident at a time on the 8 GB card. The box has
+# 15 GiB of system RAM; ollama was OOM-killed during the benchmark when a second model
+# loaded while gemma was still resident.
+# OLLAMA_HOST is deliberately unset: ollama listens on localhost only.
+# Note: this was recommended in the write-ups but NOT actually set on the box.
+ollama_env:
+  OLLAMA_MAX_LOADED_MODELS: "1"
+
+# Order ollama after the Gen2 retrain so it never holds the GPU during it.
+ollama_after_units:
+  - cmp40hx-gen2-retrain.service
+
+ollama_models:
+  - gemma4:e4b
+
+ollama_user_in_group: "{{ homelab_user | default('') }}"

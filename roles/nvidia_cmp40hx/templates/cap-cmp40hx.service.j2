@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Caps CMP40hx idle clock
+After=multi-user.target cmp40hx-gen2-retrain.service nvidia-persistenced.service
+Wants=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cap_cmp40hx.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,36 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# Detects a CMP 40HX and locks its graphics clock to the idle floor
+# ({{ cmp40hx_idle_clock_mhz }} MHz, ~12-15 W idle). Safe on every boot; does nothing
+# without the card. Undo before inference work with: sudo cmp40hx-uncap (= nvidia-smi -rgc);
+# re-apply with: sudo cmp40hx-cap
+#
+# The hand-written original had two copies of itself pasted into one file, so
+# the unit ended in "syntax error: unexpected end of file" (status=2) even though
+# the clock lock was applied. This is a single clean copy.
+set -euo pipefail
+
+LOG_TAG="cap_cmp40hx"
+log() { logger -t "$LOG_TAG" "$1"; echo "$1"; }
+
+if ! command -v nvidia-smi >/dev/null 2>&1; then
+    log "nvidia-smi not found, skipping."
+    exit 0
+fi
+
+GPU_INDEX=$(nvidia-smi -L | grep -i "CMP 40HX" | head -n 1 | sed -E 's/^GPU ([0-9]+):.*/\1/' || true)
+if [ -z "$GPU_INDEX" ]; then
+    log "No CMP 40HX detected, skipping."
+    exit 0
+fi
+
+log "CMP 40HX detected at GPU index $GPU_INDEX, applying idle clock lock."
+nvidia-smi -pm 1 -i "$GPU_INDEX"
+nvidia-smi -lgc {{ cmp40hx_idle_clock_mhz }},{{ cmp40hx_idle_clock_mhz }} -i "$GPU_INDEX"
+log "Persistence mode enabled and graphics clock locked to {{ cmp40hx_idle_clock_mhz }} MHz on GPU $GPU_INDEX."
+
+MESSAGE="CMP 40HX idle clock lock is active ({{ cmp40hx_idle_clock_mhz }} MHz). Run sudo cmp40hx-uncap (nvidia-smi -rgc) before inference work."
+wall "$MESSAGE" 2>/dev/null || true
+mkdir -p /etc/motd.d
+printf '%s\n%s\n%s\n' "======================================================" "$MESSAGE" \
+    "======================================================" > /etc/motd.d/cap-cmp40hx

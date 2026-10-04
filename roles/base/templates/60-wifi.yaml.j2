@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+network:
+  version: 2
+  wifis:
+    {{ base_wifi_interface }}:
+      dhcp4: true
+      optional: true
+      access-points:
+        "{{ base_wifi_ssid }}":
+          password: "{{ base_wifi_psk }}"

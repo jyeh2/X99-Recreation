@@ -1,0 +1,36 @@
+---
+# Mirrors what was done by hand in August: cloud-init stops owning the network
+# config and netplan brings up wls2 with wpa_supplicant.
+- name: Check Wi-Fi credentials are set
+  ansible.builtin.assert:
+    that:
+      - base_wifi_ssid | length > 0
+      - base_wifi_psk | length > 0
+    fail_msg: Set base_wifi_ssid and base_wifi_psk in the vault (see vault.yml.example).
+    quiet: true
+
+- name: Stop cloud-init from rewriting the network config
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+    content: "network: {config: disabled}\n"
+    mode: "0644"
+
+- name: Write netplan Wi-Fi config
+  ansible.builtin.template:
+    src: 60-wifi.yaml.j2
+    dest: /etc/netplan/60-wifi.yaml
+    mode: "0600"
+  no_log: true
+  register: base_netplan
+
+- name: Validate netplan
+  ansible.builtin.command: netplan generate
+  when: base_netplan is changed
+  changed_when: false
+
+- name: Apply netplan (explicit opt-in)
+  ansible.builtin.command: netplan apply
+  when:
+    - base_netplan is changed
+    - base_netplan_apply | bool
+  changed_when: true

@@ -1,0 +1,19 @@
+---
+- name: Driver (610 open)
+  ansible.builtin.import_tasks: driver.yml
+
+- name: Package holds and unattended-upgrades guard
+  ansible.builtin.import_tasks: kernel_guard.yml
+
+- name: cmpunlocker build and install
+  ansible.builtin.import_tasks: unlocker.yml
+
+- name: Gen2 retrain unit
+  ansible.builtin.import_tasks: retrain.yml
+
+- name: Idle clock cap unit
+  ansible.builtin.import_tasks: idle_clock.yml
+
+- name: Verify unlock state
+  ansible.builtin.import_tasks: verify.yml
+  tags: [verify]

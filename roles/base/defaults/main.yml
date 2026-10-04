@@ -1,0 +1,35 @@
+---
+base_hostname: "{{ inventory_hostname }}"
+base_timezone: Etc/UTC
+
+base_packages:
+  - build-essential   # kernel module + CUDA sample builds
+  - dkms
+  - linux-headers-generic
+  - pciutils          # lspci / setpci for the CMP 40HX checks
+  - git
+  - curl
+  - ca-certificates
+  - gnupg
+  - jq
+  - unzip
+  - tmux
+  - nvtop
+  - python3-venv
+  - python3-apt       # needed by ansible's apt module
+  - openssh-server
+  - wpasupplicant     # Wi-Fi uplink; see README if the box has no network yet
+
+base_user_groups: [adm, sudo, plugdev]
+
+# Extra sysctls -> /etc/sysctl.d/90-homelab.conf. Nothing was tuned on the
+# original machine, so this is empty.
+base_sysctl: {}
+
+# Wi-Fi via netplan (wpa_supplicant renderer under networkd).
+base_wifi_enabled: false
+base_wifi_interface: wls2
+base_wifi_ssid: ""
+base_wifi_psk: ""
+# Writing the file is safe; applying it can drop the SSH session.
+base_netplan_apply: false

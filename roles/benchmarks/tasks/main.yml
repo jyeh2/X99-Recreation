@@ -1,0 +1,46 @@
+---
+# The before/after scripts used for the CMP 40HX unlock write-up
+# (originally ~/flashing_rebar/bench). Results there:
+#   baseline_gen1.txt, after_unlock_gen2.txt
+- name: Create bench directory
+  ansible.builtin.file:
+    path: "{{ benchmarks_dir }}"
+    state: directory
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_user }}"
+    mode: "0755"
+
+- name: Copy bench sources and scripts
+  ansible.builtin.copy:
+    src: "{{ item.name }}"
+    dest: "{{ benchmarks_dir }}/{{ item.name }}"
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: bw.cu, mode: "0644" }
+    - { name: flops.cu, mode: "0644" }
+    - { name: llm.sh, mode: "0755" }
+    - { name: load.sh, mode: "0755" }
+  register: benchmarks_src
+
+- name: Compile bw (host<->device bandwidth)
+  ansible.builtin.command:
+    cmd: /usr/local/cuda/bin/nvcc -O2 -o {{ benchmarks_dir }}/bw {{ benchmarks_dir }}/bw.cu
+    creates: "{{ omit if (benchmarks_src.results[0] is changed) else benchmarks_dir ~ '/bw' }}"
+  become: true
+  become_user: "{{ homelab_user }}"
+
+- name: Compile flops (cuBLAS FP32/FP16 GEMM)
+  ansible.builtin.command:
+    cmd: /usr/local/cuda/bin/nvcc -O2 -o {{ benchmarks_dir }}/flops {{ benchmarks_dir }}/flops.cu -lcublas
+    creates: "{{ omit if (benchmarks_src.results[1] is changed) else benchmarks_dir ~ '/flops' }}"
+  become: true
+  become_user: "{{ homelab_user }}"
+
+- name: How to run
+  ansible.builtin.debug:
+    msg: >-
+      cd {{ benchmarks_dir }} && sudo nvidia-smi -rgc &&
+      ./bw && ./flops && ./llm.sh qwen3:8b 3 && ./llm.sh gemma4:e4b 3 &&
+      ./load.sh qwen3:8b 5 && ./load.sh gemma4:e4b 3

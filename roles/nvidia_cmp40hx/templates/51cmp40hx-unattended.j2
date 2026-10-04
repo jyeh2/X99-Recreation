@@ -1,0 +1,17 @@
+// {{ ansible_managed }}
+// The CMP 40HX unlock is a patched 610.57.04 kernel module. A driver upgrade
+// breaks the userspace/kernel match; a new kernel boots without the patched
+// modules until cmpunlocker's install.sh is rerun for it.
+Unattended-Upgrade::Package-Blacklist {
+{% if cmp40hx_unattended_blacklist_nvidia %}
+    "nvidia-";
+    "libnvidia-";
+    "xserver-xorg-video-nvidia-";
+{% endif %}
+{% if cmp40hx_unattended_blacklist_kernel %}
+    "linux-generic";
+    "linux-image-";
+    "linux-headers-";
+    "linux-modules-";
+{% endif %}
+};

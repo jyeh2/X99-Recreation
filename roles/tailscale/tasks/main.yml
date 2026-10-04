@@ -1,0 +1,70 @@
+---
+- name: Check for Tailscale apt key
+  ansible.builtin.stat:
+    path: /usr/share/keyrings/tailscale-archive-keyring.gpg
+  register: tailscale_key
+
+- name: Install Tailscale apt key
+  ansible.builtin.get_url:
+    url: "{{ tailscale_apt_key_url }}"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+  when: not tailscale_key.stat.exists
+
+- name: Add Tailscale apt repo
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/tailscale.list
+    content: "{{ tailscale_apt_repo }}\n"
+    mode: "0644"
+  register: tailscale_repo
+
+- name: Install tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: "{{ tailscale_repo is changed }}"
+
+- name: Enable tailscaled
+  ansible.builtin.systemd_service:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Read Tailscale state
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Parse Tailscale state
+  ansible.builtin.set_fact:
+    tailscale_backend_state: >-
+      {{ (tailscale_status.stdout | from_json).BackendState | default('')
+         if (tailscale_status.rc | default(1)) == 0 and tailscale_status.stdout | length > 0
+         else 'NotInstalled' }}
+
+- name: Log in to the tailnet
+  ansible.builtin.command: >-
+    tailscale up
+    --auth-key={{ tailscale_authkey }}
+    --hostname={{ tailscale_hostname }}
+    {{ '--ssh' if tailscale_ssh else '' }}
+    {{ tailscale_extra_args | join(' ') }}
+  no_log: true
+  when:
+    - tailscale_authkey | length > 0
+    - tailscale_backend_state != 'Running'
+  changed_when: true
+
+- name: Keep Tailscale SSH setting in sync on an already-logged-in node
+  ansible.builtin.command: tailscale set --ssh={{ tailscale_ssh | lower }}
+  when: tailscale_backend_state == 'Running'
+  changed_when: false
+
+- name: Remind about manual login
+  ansible.builtin.debug:
+    msg: "Tailscale is installed but not logged in. Run: sudo tailscale up --ssh --hostname={{ tailscale_hostname }}"
+  when:
+    - tailscale_authkey | length == 0
+    - tailscale_backend_state != 'Running'

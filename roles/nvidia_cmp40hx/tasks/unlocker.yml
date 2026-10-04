@@ -1,0 +1,113 @@
+---
+- name: Work out which kernels to build for
+  ansible.builtin.shell: |
+    set -o pipefail
+    {
+      uname -r
+      readlink /boot/vmlinuz | sed 's/^vmlinuz-//'
+    } | sort -u
+  args:
+    executable: /bin/bash
+  register: cmpunlocker_kernel_probe
+  changed_when: false
+  check_mode: false
+
+- name: Set kernel list
+  ansible.builtin.set_fact:
+    cmpunlocker_target_kernels: >-
+      {{ cmpunlocker_kernels if cmpunlocker_kernels | length > 0
+         else cmpunlocker_kernel_probe.stdout_lines | select | list }}
+
+- name: Build and install cmpunlocker (cold boot required)
+  when: cmp40hx_build_unlocker | bool
+  block:
+    - name: Make sure the stock 610 driver is installed first
+      ansible.builtin.assert:
+        that: ('nvidia-driver-' ~ cmp40hx_driver_branch ~ '-open') in ansible_facts.packages
+        fail_msg: Install the 610 open driver first (-e cmp40hx_install_driver=true), reboot, then build the unlocker.
+
+    - name: Install build prerequisites
+      ansible.builtin.apt:
+        name: [build-essential, pciutils, kmod, curl, git]
+        state: present
+
+    - name: Install headers for each target kernel
+      ansible.builtin.apt:
+        name: "linux-headers-{{ item }}"
+        state: present
+      loop: "{{ cmpunlocker_target_kernels }}"
+
+    - name: Clone cmpunlocker at the pinned commit
+      ansible.builtin.git:
+        repo: "{{ cmpunlocker_repo }}"
+        dest: "{{ cmpunlocker_dest }}"
+        version: "{{ cmpunlocker_version }}"
+        force: false
+      register: cmpunlocker_git
+
+    - name: Fetch the NVIDIA open kernel source and check its SHA-256
+      ansible.builtin.get_url:
+        url: "{{ cmpunlocker_source_url }}"
+        dest: "{{ cmpunlocker_dest }}/open-gpu-kernel-modules-{{ cmp40hx_driver_upstream_version }}.tar.gz"
+        checksum: "sha256:{{ cmpunlocker_source_sha256 }}"
+        mode: "0644"
+
+    - name: Read existing build stamps
+      ansible.builtin.slurp:
+        src: "/lib/modules/{{ item }}/updates/cmpunlocker/.ansible-stamp"
+      loop: "{{ cmpunlocker_target_kernels }}"
+      register: cmpunlocker_stamps
+      failed_when: false
+
+    # install.sh reuses an existing extracted source tree, and that tree is already
+    # patched after the first build, so a second kernel fails at "[3/6] Applying
+    # patches". Remove it first; install.sh re-extracts from the SHA-256-checked tarball.
+    - name: Run install.sh for each kernel whose stamp is missing or stale
+      ansible.builtin.shell:
+        cmd: >-
+          rm -rf -- "open-gpu-kernel-modules-{{ cmp40hx_driver_upstream_version }}" &&
+          ./install.sh --no-download {{ cmpunlocker_install_args | join(' ') }}
+        chdir: "{{ cmpunlocker_dest }}"
+      environment:
+        KERNEL_UNAME: "{{ item.item }}"
+      loop: "{{ cmpunlocker_stamps.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: >-
+        (item.content | default('') | b64decode | trim)
+        != (cmpunlocker_version ~ ' ' ~ cmp40hx_driver_upstream_version ~ ' ' ~ (cmpunlocker_install_args | join(',')))
+      register: cmpunlocker_build
+      changed_when: true
+
+    - name: Write build stamps
+      ansible.builtin.copy:
+        dest: "/lib/modules/{{ item.item.item }}/updates/cmpunlocker/.ansible-stamp"
+        content: "{{ cmpunlocker_version }} {{ cmp40hx_driver_upstream_version }} {{ cmpunlocker_install_args | join(',') }}\n"
+        mode: "0644"
+      loop: "{{ cmpunlocker_build.results }}"
+      loop_control:
+        label: "{{ item.item.item }}"
+      when: item is changed
+
+    - name: Cold boot needed
+      ansible.builtin.debug:
+        msg: >-
+          cmpunlocker modules installed for {{ cmpunlocker_build.results | selectattr('changed') | map(attribute='item.item') | list }}.
+          Power the machine fully OFF (sudo shutdown -h now, wait, power on). A warm reboot is not enough.
+          Then run: ansible-playbook site.yml -K --tags verify
+      when: cmpunlocker_build is changed
+
+- name: Kernel hooks for future kernels
+  ansible.builtin.template:
+    src: zz-cmpunlocker.j2
+    dest: "/etc/kernel/{{ item }}/zz-cmpunlocker"
+    mode: "0755"
+  loop: [postinst.d, header_postinst.d]
+  when: cmpunlocker_kernel_hook_enabled | bool
+
+- name: Remove kernel hooks when disabled
+  ansible.builtin.file:
+    path: "/etc/kernel/{{ item }}/zz-cmpunlocker"
+    state: absent
+  loop: [postinst.d, header_postinst.d]
+  when: not (cmpunlocker_kernel_hook_enabled | bool)

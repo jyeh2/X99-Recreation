@@ -1,0 +1,102 @@
+#!/bin/bash
+# {{ ansible_managed }}
+#
+# CMP 40HX PCIe Gen2 workaround for the X99 (Haswell-EP) root port.
+#
+# The cmpunlocker driver sets a Gen2 target on both ends of the link and then
+# retrains, but on this board the retrain fails:
+#   NVRM: ... CMP40_PCIE_GEN2_V2: RETRAIN_FAIL status=1101
+# Setting Retrain Link (bit 5 of Link Control) on the root port a second time
+# brings the link up at 5 GT/s x16. The unlock is volatile, so this has to run
+# after every cold boot.
+#
+# Usage:
+#   cmp40hx-gen2-retrain                 # boot mode (systemd unit, runs before ollama)
+#   cmp40hx-gen2-retrain --stop-services # manual: stop GPU users, retrain, restart them
+#   cmp40hx-gen2-retrain --force         # retrain even if the driver didn't log a result
+set -u
+
+GPU_BDF="{{ cmp40hx_gpu_bdf }}"
+ROOT_BDF="{{ cmp40hx_root_port_bdf }}"
+MODE="{{ cmp40hx_gen2_retrain_mode }}"          # full | masked
+WAIT_SECS={{ cmp40hx_gen2_retrain_wait | int }}
+SERVICES=({{ cmp40hx_gen2_retrain_services | join(' ') }})
+
+STOP_SERVICES=0
+FORCE=0
+for arg in "$@"; do
+    case "$arg" in
+        --stop-services) STOP_SERVICES=1 ;;
+        --force) FORCE=1 ;;
+        *) echo "unknown argument: $arg" >&2; exit 2 ;;
+    esac
+done
+
+log() { echo "$*"; logger -t cmp40hx-gen2-retrain -- "$*" 2>/dev/null || true; }
+speed() { cat "/sys/bus/pci/devices/$1/current_link_speed" 2>/dev/null || echo unknown; }
+width() { cat "/sys/bus/pci/devices/$1/current_link_width" 2>/dev/null || echo "?"; }
+is_gen2_or_better() { case "$(speed "$GPU_BDF")" in 2.5*|unknown) return 1 ;; *) return 0 ;; esac; }
+
+if [ ! -e "/sys/bus/pci/devices/$GPU_BDF" ]; then
+    log "GPU $GPU_BDF not present, nothing to do"
+    exit 0
+fi
+
+# Wait until the patched driver has run its own Gen2 attempt. Without the
+# cmpunlocker module there is no Gen2 target set, and a retrain would just
+# come back at 2.5 GT/s.
+result=""
+for _ in $(seq "$WAIT_SECS"); do
+    result=$( { journalctl -k -b -o cat; dmesg; } 2>/dev/null | grep -oE 'CMP40_PCIE_GEN2_V2: (RETRAIN_[A-Z]+ status=[0-9a-f]+|GSP policy not ready; retrain skipped|BAR0 map failed|PCI cap error=-?[0-9]+)' | tail -n1)
+    [ -n "$result" ] && break
+    is_gen2_or_better && break
+    sleep 1
+done
+
+if is_gen2_or_better; then
+    log "link already at $(speed "$GPU_BDF") x$(width "$GPU_BDF") ($result); no retrain needed"
+    exit 0
+fi
+
+if [ "$FORCE" -eq 0 ]; then
+    case "$result" in
+        "")
+            log "patched driver did not report a Gen2 retrain within ${WAIT_SECS}s (is updates/cmpunlocker loaded?); skipping"
+            exit 0 ;;
+        *RETRAIN_FAIL*|*RETRAIN_PASS*) ;;   # Gen2 target is set; a second retrain can help
+        *)
+            log "driver did not set up Gen2 ($result); skipping (use --force to retrain anyway)"
+            exit 0 ;;
+    esac
+fi
+
+log "driver reported: ${result:-nothing}; link at $(speed "$GPU_BDF") x$(width "$GPU_BDF"); retraining from root port $ROOT_BDF (mode=$MODE)"
+
+if [ "$STOP_SERVICES" -eq 1 ]; then
+    systemctl stop "${SERVICES[@]}"
+fi
+
+case "$MODE" in
+    masked) value="0020:0020" ;;  # only Retrain Link; what worked on 2026-10-02
+    full)   value="0020" ;;       # rewrites all of Link Control (clears ASPM/CCC); never actually run
+    *) log "bad MODE=$MODE"; exit 2 ;;
+esac
+setpci -s "$ROOT_BDF" "CAP_EXP+10.w=$value"
+
+for _ in $(seq 10); do
+    sleep 0.5
+    is_gen2_or_better && break
+done
+
+if [ "$STOP_SERVICES" -eq 1 ]; then
+    # reverse order: persistenced before ollama
+    printf '%s\n' "${SERVICES[@]}" | tac | while read -r unit; do systemctl start "$unit"; done
+fi
+
+if is_gen2_or_better; then
+    log "retrain OK: GPU link $(speed "$GPU_BDF") x$(width "$GPU_BDF"), root port $(speed "$ROOT_BDF")"
+    exit 0
+fi
+log "retrain did NOT reach Gen2: GPU link $(speed "$GPU_BDF") x$(width "$GPU_BDF")"
+# Don't fail the boot; the GPU still works at Gen1.
+exit 0

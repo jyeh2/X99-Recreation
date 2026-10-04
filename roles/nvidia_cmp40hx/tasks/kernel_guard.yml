@@ -1,0 +1,25 @@
+---
+# The write-up says the 610 packages were held; on 2026-10-04 `apt-mark showhold`
+# was empty and unattended-upgrades had just installed kernel 5.15.0-194.
+- name: Hold installed 610 driver packages
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: >-
+    {{ ansible_facts.packages.keys()
+       | select('match', cmp40hx_hold_patterns | join('|'))
+       | list | sort }}
+  when: cmp40hx_hold_driver_packages | bool
+
+- name: Keep unattended-upgrades away from the driver (and optionally the kernel)
+  ansible.builtin.template:
+    src: 51cmp40hx-unattended.j2
+    dest: /etc/apt/apt.conf.d/51cmp40hx-unattended
+    mode: "0644"
+  when: cmp40hx_unattended_blacklist_nvidia or cmp40hx_unattended_blacklist_kernel
+
+- name: Remove unattended-upgrades guard when both switches are off
+  ansible.builtin.file:
+    path: /etc/apt/apt.conf.d/51cmp40hx-unattended
+    state: absent
+  when: not (cmp40hx_unattended_blacklist_nvidia or cmp40hx_unattended_blacklist_kernel)

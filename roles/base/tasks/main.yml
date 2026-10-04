@@ -1,0 +1,45 @@
+---
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: "{{ base_hostname }}"
+
+- name: Read current timezone
+  ansible.builtin.command: timedatectl show -p Timezone --value
+  register: base_tz
+  changed_when: false
+  check_mode: false
+
+- name: Set timezone
+  ansible.builtin.command: timedatectl set-timezone {{ base_timezone }}
+  when: base_tz.stdout | trim != base_timezone
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Add {{ homelab_user }} to admin groups
+  ansible.builtin.user:
+    name: "{{ homelab_user }}"
+    groups: "{{ base_user_groups }}"
+    append: true
+
+- name: Write sysctl overrides
+  ansible.builtin.template:
+    src: 90-homelab.conf.j2
+    dest: /etc/sysctl.d/90-homelab.conf
+    mode: "0644"
+  when: base_sysctl | length > 0
+  notify: Reload sysctl
+
+- name: Make sure sshd is enabled
+  ansible.builtin.systemd_service:
+    name: ssh
+    enabled: true
+    state: started
+
+- name: Wi-Fi uplink
+  ansible.builtin.import_tasks: wifi.yml
+  when: base_wifi_enabled | bool

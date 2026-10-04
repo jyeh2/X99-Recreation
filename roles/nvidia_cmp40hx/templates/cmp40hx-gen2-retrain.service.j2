@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+[Unit]
+Description=CMP 40HX: retrain PCIe link to Gen2 from root port {{ cmp40hx_root_port_bdf }}
+Documentation=file:///usr/local/sbin/cmp40hx-gen2-retrain
+After=systemd-modules-load.service systemd-udevd.service
+Before=nvidia-persistenced.service ollama.service cap-cmp40hx.service
+ConditionPathExists=/sys/bus/pci/devices/{{ cmp40hx_gpu_bdf }}
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cmp40hx-gen2-retrain
+TimeoutStartSec={{ (cmp40hx_gen2_retrain_wait | int) + 30 }}
+
+[Install]
+WantedBy=multi-user.target

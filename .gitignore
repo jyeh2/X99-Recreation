@@ -1,0 +1,19 @@
+# Python venv with ansible-core
+.venv/
+__pycache__/
+*.retry
+
+# Secrets: never commit plaintext. Encrypted vault.yml files are fine,
+# so only the unencrypted working copies and password files are ignored.
+*.vault-pass
+.vault-pass*
+vault-pass*
+**/vault.plain.yml
+*.authkey
+*.pem
+*.key
+.env
+
+# Local run output
+out*.txt
+*.log

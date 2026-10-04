@@ -1,0 +1,47 @@
+---
+- name: Install Gen2 retrain script
+  ansible.builtin.template:
+    src: cmp40hx-gen2-retrain.sh.j2
+    dest: /usr/local/sbin/cmp40hx-gen2-retrain
+    mode: "0755"
+  when: cmp40hx_gen2_retrain_enabled | bool
+
+- name: Install Gen2 retrain unit
+  ansible.builtin.template:
+    src: cmp40hx-gen2-retrain.service.j2
+    dest: /etc/systemd/system/cmp40hx-gen2-retrain.service
+    mode: "0644"
+  when: cmp40hx_gen2_retrain_enabled | bool
+  register: cmp40hx_retrain_unit
+  notify: Reload systemd
+
+- name: Flush handlers so systemd sees the unit
+  ansible.builtin.meta: flush_handlers
+
+# Enabled only: it acts on the next boot. It is not started here, because a
+# retrain while ollama has the GPU open is what the manual procedure avoids.
+# To apply it now: sudo cmp40hx-gen2-retrain --stop-services
+- name: Enable Gen2 retrain unit (takes effect next boot)
+  ansible.builtin.systemd_service:
+    name: cmp40hx-gen2-retrain.service
+    enabled: true
+  when:
+    - cmp40hx_gen2_retrain_enabled | bool
+    - not (ansible_check_mode and cmp40hx_retrain_unit is changed)   # unit not on disk yet in check mode
+
+- name: Disable and remove Gen2 retrain unit
+  when: not (cmp40hx_gen2_retrain_enabled | bool)
+  block:
+    - name: Disable unit
+      ansible.builtin.systemd_service:
+        name: cmp40hx-gen2-retrain.service
+        enabled: false
+      failed_when: false
+    - name: Remove files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/cmp40hx-gen2-retrain.service
+        - /usr/local/sbin/cmp40hx-gen2-retrain
+      notify: Reload systemd

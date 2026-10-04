@@ -1,0 +1,73 @@
+---
+- name: Check for cargo
+  ansible.builtin.stat:
+    path: "{{ homelab_user_home }}/.cargo/bin/cargo"
+  register: mistralrs_cargo
+
+- name: Install Rust via rustup
+  when: not mistralrs_cargo.stat.exists
+  become: true
+  become_user: "{{ homelab_user }}"
+  block:
+    - name: Download rustup-init
+      ansible.builtin.get_url:
+        url: https://sh.rustup.rs
+        dest: "{{ homelab_user_home }}/rustup-init.sh"
+        mode: "0755"
+    - name: Run rustup-init
+      ansible.builtin.command: "{{ homelab_user_home }}/rustup-init.sh -y --profile default"
+      args:
+        creates: "{{ homelab_user_home }}/.cargo/bin/cargo"
+
+- name: Build prerequisites
+  ansible.builtin.apt:
+    name: [build-essential, pkg-config, libssl-dev, git]
+    state: present
+
+- name: Clone mistral.rs (only if absent; never touches an existing checkout)
+  ansible.builtin.git:
+    repo: "{{ mistralrs_repo }}"
+    dest: "{{ mistralrs_dest }}"
+    version: "{{ mistralrs_version }}"
+    update: false
+  become: true
+  become_user: "{{ homelab_user }}"
+
+- name: Apply the Gemma 4 PLE-on-CPU patch
+  when: mistralrs_apply_ple_patch | bool
+  become: true
+  become_user: "{{ homelab_user }}"
+  block:
+    - name: Copy patch
+      ansible.builtin.copy:
+        src: 0001-gemma4-ple-cpu-mistralrs.patch
+        dest: "{{ mistralrs_dest }}/.ansible-gemma4-ple-cpu.patch"
+        mode: "0644"
+    - name: Is the patch already applied?
+      ansible.builtin.command: git apply --reverse --check .ansible-gemma4-ple-cpu.patch
+      args:
+        chdir: "{{ mistralrs_dest }}"
+      register: mistralrs_patch_applied
+      changed_when: false
+      failed_when: false
+      check_mode: false
+    - name: git apply patch
+      ansible.builtin.command: git apply .ansible-gemma4-ple-cpu.patch
+      args:
+        chdir: "{{ mistralrs_dest }}"
+      when: mistralrs_patch_applied.rc != 0
+      register: mistralrs_patched
+
+- name: Build mistralrs-cli with CUDA for sm_{{ mistralrs_cuda_compute_cap }} (~55 min)
+  ansible.builtin.command:
+    cmd: cargo build --release --locked --features cuda -p mistralrs-cli -j {{ mistralrs_build_jobs }}
+    chdir: "{{ mistralrs_dest }}"
+    creates: "{{ omit if (mistralrs_patched is changed) else mistralrs_dest ~ '/target/release/mistralrs' }}"
+  environment:
+    PATH: "{{ homelab_user_home }}/.cargo/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    CUDA_ROOT: /usr/local/cuda
+    CUDA_COMPUTE_CAP: "{{ mistralrs_cuda_compute_cap }}"
+  become: true
+  become_user: "{{ homelab_user }}"
+  async: "{{ mistralrs_build_timeout }}"
+  poll: 60

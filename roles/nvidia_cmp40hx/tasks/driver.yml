@@ -1,0 +1,48 @@
+---
+- name: Gather package facts
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Report driver packages found
+  ansible.builtin.debug:
+    msg: >-
+      nvidia-driver-{{ cmp40hx_driver_branch }}-open:
+      {{ ansible_facts.packages['nvidia-driver-' ~ cmp40hx_driver_branch ~ '-open'][0].version
+         if ('nvidia-driver-' ~ cmp40hx_driver_branch ~ '-open') in ansible_facts.packages else 'not installed' }};
+      old drivers present: {{ cmp40hx_conflicting_packages | select('in', ansible_facts.packages) | list }}
+
+- name: Install and swap the driver (reboot required)
+  when: cmp40hx_install_driver | bool
+  block:
+    - name: Remove the old closed/server drivers
+      ansible.builtin.apt:
+        name: "{{ cmp40hx_conflicting_packages }}"
+        state: absent
+        purge: true
+      when: cmp40hx_purge_old_drivers | bool
+
+    - name: Install nvidia-driver-{{ cmp40hx_driver_branch }}-open {{ cmp40hx_driver_apt_version }} from the archive
+      ansible.builtin.apt:
+        name: "{{ cmp40hx_driver_packages | map('regex_replace', '$', '=' ~ cmp40hx_driver_apt_version) | list }}"
+        state: present
+        update_cache: true
+        allow_change_held_packages: true
+      when: cmp40hx_driver_deb_dir | length == 0
+      register: cmp40hx_driver_install
+
+    - name: Install the driver from cached .debs
+      ansible.builtin.shell: apt-get install -y --allow-change-held-packages ./*.deb
+      args:
+        chdir: "{{ cmp40hx_driver_deb_dir }}"
+      when:
+        - cmp40hx_driver_deb_dir | length > 0
+        - ('nvidia-driver-' ~ cmp40hx_driver_branch ~ '-open') not in ansible_facts.packages
+      register: cmp40hx_driver_install_debs
+      changed_when: true
+
+    - name: Reboot needed
+      ansible.builtin.debug:
+        msg: >-
+          Driver packages changed. Reboot, confirm `nvidia-smi` works on the stock 610
+          driver, then run again with -e cmp40hx_build_unlocker=true.
+      when: (cmp40hx_driver_install is changed) or (cmp40hx_driver_install_debs is changed)
