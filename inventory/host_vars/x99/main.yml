@@ -55,8 +55,5 @@ cmpunlocker_repo: https://github.com/jyeh2/cmpunlocker.git
 
 # ---- Ollama ----
 ollama_version: "0.32.5"
-ollama_models:
-  - gemma4:e4b      # the everyday extraction model
-  - qwen3:8b        # benchmark comparison models
-  - qwen3.5:4b
-  - qwen2.5:3b
+# Emptied 2026-10-24 (disk cleanup). Explicit [] so the role default (gemma4:e4b) isn't pulled.
+ollama_models: []
