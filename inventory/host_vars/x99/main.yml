@@ -48,6 +48,8 @@ cmpunlocker_kernel_hook_enabled: true
 # The hook reads install.sh from here. With the /opt default it skipped the 5.15.0-198
 # update (2026-10-15) and the box booted the stock module back at Gen1.
 cmpunlocker_dest: /home/james/cmpunlocker
+# Clone from my fork (keeps e4b4d46 available if upstream changes or disappears).
+cmpunlocker_repo: https://github.com/jyeh2/cmpunlocker.git
 
 # Ollama stays bound to localhost (OLLAMA_HOST unset); not reachable over the tailnet yet.
 
