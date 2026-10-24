@@ -1,7 +1,7 @@
 # homelab-ansible
 
 Ansible for **kabangy**, the X99 home LLM inference server: a Huananzhi X99-BD4 board,
-a Xeon E5-2678 v3, Ubuntu 22.04.5 (kernel 5.15), headless, on Tailscale, with an NVIDIA
+a Xeon E5-2678 v3, Ubuntu 24.04.5 (HWE kernel 7.0; was 22.04.5 / 5.15 until 2026-10-17), headless, on Tailscale, with an NVIDIA
 CMP 40HX mining card that has been unlocked to PCIe Gen2, an 8 GiB BAR1 and full FP16.
 
 The playbook manages itself (`ansible_connection: local`). An Orange Pi Zero (the
@@ -21,7 +21,7 @@ site.yml
 roles/
   base            packages, hostname, timezone, user groups, sysctl, optional Wi-Fi netplan
   tailscale       apt repo, tailscaled, `tailscale up --ssh` when an auth key is given
-  nvidia_cmp40hx  610-open driver, package holds, cmpunlocker build, Gen2 retrain unit,
+  nvidia_cmp40hx  610.57.04 userspace (.run or apt), apt pin/holds, cmpunlocker build, Gen2 retrain unit,
                   idle clock cap unit, read-only verification
   ollama          pinned install, systemd override env, model pulls
   cuda_toolkit    NVIDIA CUDA repo + cuda-toolkit-13-0 (dependency of the two below)
@@ -35,7 +35,7 @@ Anything that needs a reboot, or can't be undone from a running system, is behin
 
 | Variable | Default | Effect |
 |---|---|---|
-| `cmp40hx_install_driver` | false | install `nvidia-driver-610-open` 610.57.04 (reboot needed) |
+| `cmp40hx_install_driver` | false | install the 610.57.04 userspace: NVIDIA `.run` with `--no-kernel-modules` when `cmp40hx_driver_install_method: runfile` (x99, 24.04), else `nvidia-driver-610-open` from apt (22.04) |
 | `cmp40hx_purge_old_drivers` | false | with the above, purge the 570/580-server packages |
 | `cmp40hx_build_unlocker` | false | build cmpunlocker and install into `updates/cmpunlocker` (**cold boot** needed) |
 | `cmpunlocker_kernel_hook_enabled` | false | rebuild the unlocker automatically for new kernels (recommended, see below) |
@@ -50,6 +50,18 @@ the unattended-upgrades blacklist for `nvidia-*`, and (on x99 only, via host_var
 
 A routine `site.yml` run restarts ollama once if its override changes. It doesn't touch the
 driver, the modules or the PCIe link.
+
+## Ubuntu 24.04 / kernel 7.0
+
+On noble, `nvidia-driver-610-open` (610.57.04-0ubuntu0.24.04.4) depends on 615 packages, so
+apt can't hold the userspace at 610.57.04. x99 therefore sets
+`cmp40hx_driver_install_method: runfile`: the NVIDIA 610.57.04 `.run` installs the userspace
+only (`--no-kernel-modules`, SHA-256 checked), cmpunlocker builds the kernel modules, and
+`/etc/apt/preferences.d/cmp40hx-no-apt-driver` pins the apt driver packages to -1 so nothing
+pulls them back in. The `.run` installs no `nvidia-persistenced` unit; `cap_cmp40hx.sh` turns
+persistence mode on with `nvidia-smi -pm 1` instead. cmpunlocker v2.0.1's `install.sh` builds
+against the stock HWE 7.0 headers unchanged (the objtool "'naked' return found" warnings are
+harmless). The tailscale and CUDA repos follow the installed release (noble / ubuntu2404).
 
 ## Bootstrap from a fresh Ubuntu 22.04 install
 

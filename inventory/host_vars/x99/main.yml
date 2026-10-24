@@ -1,6 +1,7 @@
 ---
-# kabangy: Huananzhi X99-BD4, Xeon E5-2678 v3, Ubuntu 22.04.5, headless.
-# Values below reflect the machine as found on 2026-10-04.
+# kabangy: Huananzhi X99-BD4, Xeon E5-2678 v3, headless.
+# Values below reflect the machine as found on 2026-10-04, updated 2026-10-20 for
+# Ubuntu 24.04.5 + HWE kernel 7.0.0-38 (was 22.04.5 / 5.15).
 
 base_hostname: kabangy
 base_timezone: Etc/UTC
@@ -23,10 +24,19 @@ cmp40hx_install_driver: false
 cmp40hx_build_unlocker: false
 cmp40hx_purge_old_drivers: false
 
+# 24.04: userspace from NVIDIA's 610.57.04 .run (--no-kernel-modules), kernel modules
+# from cmpunlocker. Ubuntu's nvidia-driver-610-open on noble depends on 615 and was
+# purged twice (10-17, 10-20); the role pins apt driver packages to -1.
+cmp40hx_driver_install_method: runfile
+cmp40hx_driver_runfile: /home/james/cmpunlocker/NVIDIA-Linux-x86_64-610.57.04.run
+
 # Boot-time Gen2 retrain from the root port. "masked" (CAP_EXP+10.w=0020:0020) is the
 # form that was actually run and worked on 2026-10-02 (see after.png).
 cmp40hx_gen2_retrain_enabled: true
 cmp40hx_gen2_retrain_mode: masked
+# The retrain alone stays at 2.5 GT/s after a cold boot; the driver reprobe has to run
+# first (confirmed 2026-10-05). This box's checkout is ~/cmpunlocker, not /opt/cmpunlocker.
+cmp40hx_gen2_reprobe_src: /home/james/cmpunlocker/tools/cmp40hx-driver-reprobe-gen2.sh
 
 # cap-cmp40hx.service: 300 MHz idle clock lock at boot (saves power). Release it before
 # inference work with `sudo cmp40hx-uncap` (nvidia-smi -rgc); re-apply with `sudo cmp40hx-cap`.
@@ -35,6 +45,9 @@ cmp40hx_idle_clock_cap_enabled: true
 # Rebuild cmpunlocker automatically for every newly installed kernel, so an unattended
 # kernel update can't silently boot into the stock (locked) driver.
 cmpunlocker_kernel_hook_enabled: true
+# The hook reads install.sh from here. With the /opt default it skipped the 5.15.0-198
+# update (2026-10-15) and the box booted the stock module back at Gen1.
+cmpunlocker_dest: /home/james/cmpunlocker
 
 # Ollama stays bound to localhost (OLLAMA_HOST unset); not reachable over the tailnet yet.
 

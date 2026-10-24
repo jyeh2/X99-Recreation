@@ -6,9 +6,13 @@
 # The cmpunlocker driver sets a Gen2 target on both ends of the link and then
 # retrains, but on this board the retrain fails:
 #   NVRM: ... CMP40_PCIE_GEN2_V2: RETRAIN_FAIL status=1101
-# Setting Retrain Link (bit 5 of Link Control) on the root port a second time
-# brings the link up at 5 GT/s x16. The unlock is volatile, so this has to run
-# after every cold boot.
+# After a cold boot the endpoint also still advertises Gen1 only (LnkCap2 bit
+# 0x04 clear), so a retrain alone comes back at 2.5 GT/s. The fix is:
+#   1. cmpunlocker's tools/cmp40hx-driver-reprobe-gen2.sh (nvidia unbind/bind),
+#      after which LnkCap2 advertises Gen2;
+#   2. Retrain Link (bit 5 of Link Control) on the root port,
+# which brings the link up at 5 GT/s x16 (2026-10-02, again 2026-10-05). The
+# unlock is volatile, so this has to run after every cold boot.
 #
 # Usage:
 #   cmp40hx-gen2-retrain                 # boot mode (systemd unit, runs before ollama)
@@ -21,6 +25,7 @@ ROOT_BDF="{{ cmp40hx_root_port_bdf }}"
 MODE="{{ cmp40hx_gen2_retrain_mode }}"          # full | masked
 WAIT_SECS={{ cmp40hx_gen2_retrain_wait | int }}
 SERVICES=({{ cmp40hx_gen2_retrain_services | join(' ') }})
+REPROBE="{{ cmp40hx_gen2_reprobe_path }}"         # empty = no reprobe step
 
 STOP_SERVICES=0
 FORCE=0
@@ -35,6 +40,11 @@ done
 log() { echo "$*"; logger -t cmp40hx-gen2-retrain -- "$*" 2>/dev/null || true; }
 speed() { cat "/sys/bus/pci/devices/$1/current_link_speed" 2>/dev/null || echo unknown; }
 width() { cat "/sys/bus/pci/devices/$1/current_link_width" 2>/dev/null || echo "?"; }
+gpu_advertises_gen2() {
+    local cap2
+    cap2=$(setpci -s "$GPU_BDF" CAP_EXP+2c.L 2>/dev/null) || return 1
+    (( (16#$cap2 & 0x4) != 0 ))
+}
 is_gen2_or_better() { case "$(speed "$GPU_BDF")" in 2.5*|unknown) return 1 ;; *) return 0 ;; esac; }
 
 if [ ! -e "/sys/bus/pci/devices/$GPU_BDF" ]; then
@@ -74,6 +84,21 @@ log "driver reported: ${result:-nothing}; link at $(speed "$GPU_BDF") x$(width "
 
 if [ "$STOP_SERVICES" -eq 1 ]; then
     systemctl stop "${SERVICES[@]}"
+fi
+
+if ! gpu_advertises_gen2; then
+    if [ -n "$REPROBE" ] && [ -x "$REPROBE" ]; then
+        log "endpoint advertises Gen1 only (LnkCap2 bit 0x04 clear); running driver reprobe"
+        # Exits 1 when the link is still Gen1 afterwards, which is expected
+        # here: the root port retrain below finishes the job.
+        "$REPROBE" --confirm-driver-reprobe --gpu "$GPU_BDF" 2>&1 | logger -t cmp40hx-gen2-retrain || true
+        if [ "$(basename "$(readlink -f "/sys/bus/pci/devices/$GPU_BDF/driver" 2>/dev/null)")" != nvidia ]; then
+            log "GPU is not bound to nvidia after the reprobe; a cold power-off may be needed"
+        fi
+        gpu_advertises_gen2 || log "endpoint still advertises Gen1 only after the reprobe; the retrain will likely stay at 2.5 GT/s"
+    else
+        log "endpoint advertises Gen1 only and no reprobe script at '${REPROBE}'; the retrain will likely stay at 2.5 GT/s"
+    fi
 fi
 
 case "$MODE" in

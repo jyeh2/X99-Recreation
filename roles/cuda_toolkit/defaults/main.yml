@@ -1,4 +1,7 @@
 ---
-cuda_keyring_url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+# ubuntu2204 / ubuntu2404, from the installed release. The keyring .deb is per-release:
+# it ships /etc/apt/sources.list.d/cuda-<repo>-x86_64.list.
+cuda_repo_distro: "ubuntu{{ ansible_facts.distribution_version | replace('.', '') }}"
+cuda_keyring_url: "https://developer.download.nvidia.com/compute/cuda/repos/{{ cuda_repo_distro }}/x86_64/cuda-keyring_1.1-1_all.deb"
 cuda_toolkit_package: cuda-toolkit-13-0
 cuda_home: /usr/local/cuda

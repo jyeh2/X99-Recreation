@@ -1,6 +1,8 @@
 ---
-tailscale_apt_key_url: https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg
-tailscale_apt_repo: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu jammy main"
+# Follows the installed release (jammy on 22.04, noble on 24.04).
+tailscale_apt_release: "{{ ansible_facts.distribution_release }}"
+tailscale_apt_key_url: "https://pkgs.tailscale.com/stable/ubuntu/{{ tailscale_apt_release }}.noarmor.gpg"
+tailscale_apt_repo: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu {{ tailscale_apt_release }} main"
 
 # Supply via ansible-vault (inventory/host_vars/x99/vault.yml). If empty, the role
 # installs tailscaled and leaves login to you (`sudo tailscale up --ssh`).

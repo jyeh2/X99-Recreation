@@ -21,10 +21,15 @@
 - name: Build and install cmpunlocker (cold boot required)
   when: cmp40hx_build_unlocker | bool
   block:
-    - name: Make sure the stock 610 driver is installed first
+    - name: Make sure the {{ cmp40hx_driver_upstream_version }} userspace is installed first
       ansible.builtin.assert:
-        that: ('nvidia-driver-' ~ cmp40hx_driver_branch ~ '-open') in ansible_facts.packages
-        fail_msg: Install the 610 open driver first (-e cmp40hx_install_driver=true), reboot, then build the unlocker.
+        that: >-
+          (('nvidia-driver-' ~ cmp40hx_driver_branch ~ '-open') in ansible_facts.packages)
+          if cmp40hx_driver_install_method == 'apt'
+          else cmp40hx_runfile_userspace.stat.exists
+        fail_msg: >-
+          Install the {{ cmp40hx_driver_upstream_version }} driver first
+          (-e cmp40hx_install_driver=true), then build the unlocker.
 
     - name: Install build prerequisites
       ansible.builtin.apt:

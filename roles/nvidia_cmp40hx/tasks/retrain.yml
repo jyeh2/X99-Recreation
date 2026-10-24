@@ -6,6 +6,35 @@
     mode: "0755"
   when: cmp40hx_gen2_retrain_enabled | bool
 
+- name: Check for the cmpunlocker reprobe script
+  ansible.builtin.stat:
+    path: "{{ cmp40hx_gen2_reprobe_src }}"
+  register: cmp40hx_reprobe_src_stat
+  when:
+    - cmp40hx_gen2_retrain_enabled | bool
+    - cmp40hx_gen2_reprobe_src | length > 0
+
+- name: Install driver reprobe script
+  ansible.builtin.copy:
+    src: "{{ cmp40hx_gen2_reprobe_src }}"
+    dest: "{{ cmp40hx_gen2_reprobe_path }}"
+    remote_src: true
+    mode: "0755"
+  when:
+    - cmp40hx_gen2_retrain_enabled | bool
+    - cmp40hx_gen2_reprobe_src | length > 0
+    - cmp40hx_reprobe_src_stat.stat.exists | default(false)
+
+- name: Warn when the reprobe script is missing
+  ansible.builtin.debug:
+    msg: >-
+      {{ cmp40hx_gen2_reprobe_src }} not found. The retrain unit will run without the
+      driver reprobe, and after a cold boot the link will most likely stay at 2.5 GT/s.
+  when:
+    - cmp40hx_gen2_retrain_enabled | bool
+    - cmp40hx_gen2_reprobe_src | length > 0
+    - not (cmp40hx_reprobe_src_stat.stat.exists | default(false))
+
 - name: Install Gen2 retrain unit
   ansible.builtin.template:
     src: cmp40hx-gen2-retrain.service.j2
@@ -44,4 +73,5 @@
       loop:
         - /etc/systemd/system/cmp40hx-gen2-retrain.service
         - /usr/local/sbin/cmp40hx-gen2-retrain
+        - "{{ cmp40hx_gen2_reprobe_path }}"
       notify: Reload systemd

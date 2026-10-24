@@ -1,26 +1,29 @@
 ---
 # Only the toolkit (nvcc, cuBLAS headers). Never install `cuda` or `cuda-drivers`
-# from this repo: they pull NVIDIA's own driver packages over the held
-# Ubuntu 610.57.04 driver that cmpunlocker is built against.
-- name: Check for cuda-keyring
-  ansible.builtin.command: dpkg-query -W -f='${Status}' cuda-keyring
-  register: cuda_keyring_state
-  changed_when: false
-  failed_when: false
-  check_mode: false
+# from this repo: they pull NVIDIA's own driver packages over the 610.57.04
+# userspace that cmpunlocker is built against (blocked by an apt pin on 24.04).
+
+# Checks the repo list rather than the package: after the 22.04 -> 24.04 upgrade the
+# ubuntu2204 keyring was still installed but its list had been renamed *.distUpgrade.
+- name: Check for the CUDA repo list for this release
+  ansible.builtin.stat:
+    path: "/etc/apt/sources.list.d/cuda-{{ cuda_repo_distro }}-x86_64.list"
+  register: cuda_repo_list
 
 - name: Install cuda-keyring
-  when: "'install ok installed' not in cuda_keyring_state.stdout"
+  when: not cuda_repo_list.stat.exists
   block:
     - name: Download cuda-keyring
       ansible.builtin.get_url:
         url: "{{ cuda_keyring_url }}"
         dest: /tmp/cuda-keyring.deb
         mode: "0644"
+    # dpkg -i, not apt deb=: every release's keyring is version 1.1-1, so apt
+    # would treat the 2404 one as already installed and skip it.
     - name: Install cuda-keyring .deb
-      ansible.builtin.apt:
-        deb: /tmp/cuda-keyring.deb
+      ansible.builtin.command: dpkg -i /tmp/cuda-keyring.deb
       register: cuda_keyring_installed
+      changed_when: true
 
 - name: Install {{ cuda_toolkit_package }}
   ansible.builtin.apt:

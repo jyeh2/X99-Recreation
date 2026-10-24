@@ -11,8 +11,75 @@
          if ('nvidia-driver-' ~ cmp40hx_driver_branch ~ '-open') in ansible_facts.packages else 'not installed' }};
       old drivers present: {{ cmp40hx_conflicting_packages | select('in', ansible_facts.packages) | list }}
 
+- name: Check for the {{ cmp40hx_driver_upstream_version }} userspace (runfile install)
+  ansible.builtin.stat:
+    path: "/usr/lib/x86_64-linux-gnu/libcuda.so.{{ cmp40hx_driver_upstream_version }}"
+  register: cmp40hx_runfile_userspace
+
+- name: Report runfile userspace
+  ansible.builtin.debug:
+    msg: >-
+      libcuda.so.{{ cmp40hx_driver_upstream_version }}:
+      {{ 'present' if cmp40hx_runfile_userspace.stat.exists else 'missing' }}
+  when: cmp40hx_driver_install_method == 'runfile'
+
+- name: Block apt driver packages (runfile install)
+  ansible.builtin.copy:
+    dest: /etc/apt/preferences.d/cmp40hx-no-apt-driver
+    mode: "0644"
+    content: |
+      # Managed by homelab-ansible (roles/nvidia_cmp40hx); local edits are overwritten.
+      # The NVIDIA userspace is the {{ cmp40hx_driver_upstream_version }} .run (--no-kernel-modules)
+      # and the kernel modules are cmpunlocker's. apt driver packages would replace both.
+      Package: {{ cmp40hx_apt_block_patterns | join(' ') }}
+      Pin: release *
+      Pin-Priority: -1
+  when: cmp40hx_apt_block_driver_packages | bool
+
+- name: Remove the apt driver block
+  ansible.builtin.file:
+    path: /etc/apt/preferences.d/cmp40hx-no-apt-driver
+    state: absent
+  when: not (cmp40hx_apt_block_driver_packages | bool)
+
+- name: Install the driver userspace from the NVIDIA .run (reboot required)
+  when:
+    - cmp40hx_install_driver | bool
+    - cmp40hx_driver_install_method == 'runfile'
+  block:
+    - name: Remove the old apt driver packages
+      ansible.builtin.apt:
+        name: "{{ cmp40hx_conflicting_packages + cmp40hx_driver_packages }}"
+        state: absent
+        purge: true
+      when: cmp40hx_purge_old_drivers | bool
+
+    - name: Fetch the .run and check its SHA-256
+      ansible.builtin.get_url:
+        url: "{{ cmp40hx_driver_runfile_url }}"
+        dest: "{{ cmp40hx_driver_runfile }}"
+        checksum: "sha256:{{ cmp40hx_driver_runfile_sha256 }}"
+        mode: "0755"
+
+    - name: Run the .run installer without kernel modules
+      ansible.builtin.command:
+        argv: "{{ ['sh', cmp40hx_driver_runfile] + cmp40hx_driver_runfile_args }}"
+      when: not cmp40hx_runfile_userspace.stat.exists
+      register: cmp40hx_driver_install_run
+      changed_when: true
+
+    - name: Reboot needed
+      ansible.builtin.debug:
+        msg: >-
+          {{ cmp40hx_driver_upstream_version }} userspace installed. There is no stock kernel
+          module with this method: run again with -e cmp40hx_build_unlocker=true, then do a
+          full power-off.
+      when: cmp40hx_driver_install_run is changed
+
 - name: Install and swap the driver (reboot required)
-  when: cmp40hx_install_driver | bool
+  when:
+    - cmp40hx_install_driver | bool
+    - cmp40hx_driver_install_method == 'apt'
   block:
     - name: Remove the old closed/server drivers
       ansible.builtin.apt:

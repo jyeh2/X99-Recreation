@@ -12,6 +12,7 @@
     echo "module_running=$(modinfo -F filename nvidia 2>/dev/null)"
     echo "module_next_boot=$( [ -n "$next" ] && modinfo -k "$next" -F filename nvidia 2>/dev/null)"
     echo "module_version=$(modinfo -F version nvidia 2>/dev/null)"
+    echo "userspace_version=$(ls /usr/lib/x86_64-linux-gnu/libcuda.so.*.*.* 2>/dev/null | sed 's/.*libcuda\.so\.//' | tr '\n' ' ')"
     echo "gpu_link=$(cat /sys/bus/pci/devices/$gpu/current_link_speed 2>/dev/null) x$(cat /sys/bus/pci/devices/$gpu/current_link_width 2>/dev/null)"
     echo "root_port_link=$(cat /sys/bus/pci/devices/$rp/current_link_speed 2>/dev/null) x$(cat /sys/bus/pci/devices/$rp/current_link_width 2>/dev/null)"
     echo "bar1_total=$(nvidia-smi -q 2>/dev/null | awk '/BAR1 Memory Usage/{f=1} f&&/Total/{print $3,$4; exit}')"
@@ -37,6 +38,7 @@
     cmp40hx_checks:
       patched_module_loaded: "{{ 'updates/cmpunlocker/' in cmp40hx_state.module_running }}"
       patched_module_for_next_boot: "{{ 'updates/cmpunlocker/' in cmp40hx_state.module_next_boot }}"
+      userspace_matches: "{{ (cmp40hx_state.userspace_version | trim) == cmp40hx_driver_upstream_version }}"
       bar1_8gib: "{{ cmp40hx_state.bar1_total is search('^8192') }}"
       link_gen2: "{{ cmp40hx_state.gpu_link is search('^5(\\.0)? GT/s') }}"
       link_x16: "{{ cmp40hx_state.gpu_link is search('x16$') }}"
@@ -47,6 +49,7 @@
       - "running kernel {{ cmp40hx_state.running_kernel }}, next boot {{ cmp40hx_state.next_boot_kernel }}"
       - "nvidia module (running): {{ cmp40hx_state.module_running }} {{ cmp40hx_state.module_version }}"
       - "nvidia module (next boot): {{ cmp40hx_state.module_next_boot }}"
+      - "userspace (libcuda): {{ cmp40hx_state.userspace_version | trim or 'none' }}"
       - "GPU link {{ cmp40hx_state.gpu_link }} | root port {{ cmp40hx_state.root_port_link }}"
       - "BAR1 total: {{ cmp40hx_state.bar1_total }}"
       - "driver Gen2 log: {{ cmp40hx_state.gen2_driver_log | default('', true) or 'none' }}"
@@ -85,6 +88,7 @@
     that:
       - cmp40hx_checks.patched_module_loaded | bool
       - cmp40hx_checks.patched_module_for_next_boot | bool
+      - cmp40hx_checks.userspace_matches | bool
       - cmp40hx_checks.bar1_8gib | bool
       - cmp40hx_checks.link_gen2 | bool
       - cmp40hx_checks.link_x16 | bool

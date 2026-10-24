@@ -10,7 +10,8 @@ ConditionPathExists=/sys/bus/pci/devices/{{ cmp40hx_gpu_bdf }}
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/sbin/cmp40hx-gen2-retrain
-TimeoutStartSec={{ (cmp40hx_gen2_retrain_wait | int) + 30 }}
+# driver wait + reprobe (unbind/bind and nvidia-smi waits, 30 s each at worst) + retrain
+TimeoutStartSec={{ (cmp40hx_gen2_retrain_wait | int) + 150 }}
 
 [Install]
 WantedBy=multi-user.target

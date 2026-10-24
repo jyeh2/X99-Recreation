@@ -12,6 +12,12 @@ cmp40hx_driver_branch: "610"
 # cmpunlocker patches exactly this upstream source version; the userspace
 # packages must match the patched kernel module.
 cmp40hx_driver_upstream_version: "610.57.04"
+# apt     -> Ubuntu's nvidia-driver-610-open packages (what 22.04 used).
+# runfile -> NVIDIA's .run installer with --no-kernel-modules: userspace only, the
+#            kernel modules come from cmpunlocker. Needed on 24.04, where
+#            nvidia-driver-610-open 610.57.04-0ubuntu0.24.04.4 depends on 615
+#            packages (found 2026-10-20) and drags the userspace off 610.57.04.
+cmp40hx_driver_install_method: apt
 cmp40hx_driver_apt_version: "610.57.04-0ubuntu0.22.04.3"
 cmp40hx_driver_packages:
   - nvidia-driver-610-open
@@ -19,6 +25,24 @@ cmp40hx_driver_packages:
 # Optional: install from a directory of cached .debs instead of the Ubuntu
 # archive (the archive drops old point releases). See README.
 cmp40hx_driver_deb_dir: ""
+# runfile method. The .run is checked against the SHA-256 and run once; it's skipped
+# when libcuda.so.<version> is already present.
+cmp40hx_driver_runfile: "{{ cmpunlocker_dest }}/NVIDIA-Linux-x86_64-{{ cmp40hx_driver_upstream_version }}.run"
+cmp40hx_driver_runfile_url: "https://us.download.nvidia.com/XFree86/Linux-x86_64/{{ cmp40hx_driver_upstream_version }}/NVIDIA-Linux-x86_64-{{ cmp40hx_driver_upstream_version }}.run"
+cmp40hx_driver_runfile_sha256: b2e935c66b83bb00c0c857bc8e0ee0fd52de9286b40c9cc1eec29a7ce7eb116d
+cmp40hx_driver_runfile_args: [--silent, --no-kernel-modules, --no-questions, --ui=none]
+# With the runfile, apt must never install Ubuntu's or NVIDIA's driver packages
+# (a later `apt install` of anything that recommends them would pull 615 and its
+# DKMS module). Pin them to -1. Leaves cuda-toolkit-* alone.
+cmp40hx_apt_block_driver_packages: "{{ cmp40hx_driver_install_method == 'runfile' }}"
+cmp40hx_apt_block_patterns:
+  - nvidia-driver-*
+  - nvidia-dkms-*
+  - nvidia-kernel-*
+  - nvidia-utils-*
+  - nvidia-compute-utils-*
+  - libnvidia-compute-*
+  - cuda-drivers*
 
 # Removing the old closed driver also needs a reboot. Off by default.
 cmp40hx_purge_old_drivers: false
@@ -71,6 +95,11 @@ cmp40hx_gen2_retrain_mode: masked
 cmp40hx_gen2_retrain_wait: 90
 # Services stopped/started around a manual run (`cmp40hx-gen2-retrain --stop-services`).
 cmp40hx_gen2_retrain_services: [ollama, nvidia-persistenced]
+# Driver reprobe run before the retrain when the endpoint advertises Gen1 only
+# (always the case after a cold boot). Installed from the cmpunlocker checkout;
+# set cmp40hx_gen2_reprobe_src to "" to skip the reprobe step.
+cmp40hx_gen2_reprobe_src: "{{ cmpunlocker_dest }}/tools/cmp40hx-driver-reprobe-gen2.sh"
+cmp40hx_gen2_reprobe_path: /usr/local/sbin/cmp40hx-driver-reprobe-gen2
 
 # ------------------------------------------------------- idle clock cap
 # Original cap-cmp40hx.service: persistence mode + 300 MHz graphics clock lock.
