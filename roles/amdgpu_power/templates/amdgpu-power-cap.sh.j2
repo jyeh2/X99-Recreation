@@ -1,0 +1,64 @@
+#!/bin/bash
+# {{ ansible_managed }}
+#
+# Set the amdgpu package power cap on every matching GPU. Writes power1_cap in
+# microwatts, clamped to the card's power1_cap_min/max.
+#
+# Usage: amdgpu-power-cap [WATTS]     (default {{ amdgpu_power_cap_watts }})
+set -u
+
+WATTS="${1:-{{ amdgpu_power_cap_watts }}}"
+DEVICE_IDS=({{ amdgpu_power_cap_device_ids | map('quote') | join(' ') }})
+WAIT_SECS={{ amdgpu_power_cap_wait }}
+{% raw %}
+
+log() { echo "$*"; logger -t amdgpu-power-cap -- "$*" 2>/dev/null || true; }
+
+case "$WATTS" in ''|*[!0-9]*) log "bad wattage '$WATTS'"; exit 2 ;; esac
+
+matching_devs() {
+    local dev id want
+    for dev in /sys/bus/pci/drivers/amdgpu/0000:*; do
+        [ -e "$dev/device" ] || continue
+        id=$(cat "$dev/device")
+        for want in "${DEVICE_IDS[@]}"; do
+            [ "$id" = "$want" ] && echo "$dev"
+        done
+    done
+}
+
+# amdgpu can bind a while after this unit starts; wait for at least one hwmon.
+devs=()
+for _ in $(seq "$WAIT_SECS"); do
+    mapfile -t devs < <(matching_devs)
+    if [ "${#devs[@]}" -gt 0 ] && ls "${devs[0]}"/hwmon/hwmon*/power1_cap >/dev/null 2>&1; then
+        break
+    fi
+    devs=()
+    sleep 1
+done
+if [ "${#devs[@]}" -eq 0 ]; then
+    log "no amdgpu device matching ${DEVICE_IDS[*]} after ${WAIT_SECS}s; nothing to do"
+    exit 0
+fi
+
+rc=0
+for dev in "${devs[@]}"; do
+    bdf=$(basename "$dev")
+    hw=$(ls -d "$dev"/hwmon/hwmon* 2>/dev/null | head -n1)
+    if [ -z "$hw" ] || [ ! -w "$hw/power1_cap" ]; then
+        log "$bdf: no writable power1_cap"; rc=1; continue
+    fi
+    want=$((WATTS * 1000000))
+    min=$(cat "$hw/power1_cap_min" 2>/dev/null || echo 0)
+    max=$(cat "$hw/power1_cap_max" 2>/dev/null || echo "$want")
+    (( want > max )) && { log "$bdf: ${WATTS} W is above the ${max%000000} W maximum; clamping"; want=$max; }
+    (( want < min )) && { log "$bdf: ${WATTS} W is below the ${min%000000} W minimum; clamping"; want=$min; }
+    if echo "$want" > "$hw/power1_cap"; then
+        log "$bdf: power cap $(( $(cat "$hw/power1_cap") / 1000000 )) W (default $(( $(cat "$hw/power1_cap_default") / 1000000 )) W)"
+    else
+        log "$bdf: writing power1_cap failed"; rc=1
+    fi
+done
+exit "$rc"
+{% endraw %}

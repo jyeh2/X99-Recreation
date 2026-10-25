@@ -1,0 +1,55 @@
+---
+- name: AMD GPU power cap
+  when: amdgpu_power_cap_enabled | bool
+  block:
+    - name: Install amdgpu-power-cap
+      ansible.builtin.template:
+        src: amdgpu-power-cap.sh.j2
+        dest: /usr/local/sbin/amdgpu-power-cap
+        mode: "0755"
+      register: amdgpu_power_cap_script
+
+    - name: Install amdgpu-power-cap.service
+      ansible.builtin.template:
+        src: amdgpu-power-cap.service.j2
+        dest: /etc/systemd/system/amdgpu-power-cap.service
+        mode: "0644"
+      register: amdgpu_power_cap_unit
+      notify: Reload systemd
+
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable and start amdgpu-power-cap.service
+      ansible.builtin.systemd_service:
+        name: amdgpu-power-cap.service
+        enabled: true
+        state: started
+      when: not (ansible_check_mode and amdgpu_power_cap_unit is changed)
+
+    # RemainAfterExit keeps the unit "active", so a changed wattage needs a re-run.
+    - name: Apply a changed cap now
+      ansible.builtin.systemd_service:
+        name: amdgpu-power-cap.service
+        state: restarted
+      when:
+        - amdgpu_power_cap_script is changed or amdgpu_power_cap_unit is changed
+        - not ansible_check_mode
+
+- name: Remove AMD GPU power cap
+  when: not (amdgpu_power_cap_enabled | bool)
+  block:
+    - name: Disable amdgpu-power-cap.service
+      ansible.builtin.systemd_service:
+        name: amdgpu-power-cap.service
+        enabled: false
+        state: stopped
+      failed_when: false
+    - name: Remove power cap files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/amdgpu-power-cap.service
+        - /usr/local/sbin/amdgpu-power-cap
+      notify: Reload systemd

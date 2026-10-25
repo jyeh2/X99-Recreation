@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Cap AMD GPU package power to {{ amdgpu_power_cap_watts }} W
+After=systemd-modules-load.service systemd-udevd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/amdgpu-power-cap
+TimeoutStartSec={{ amdgpu_power_cap_wait + 30 }}
+
+[Install]
+WantedBy=multi-user.target

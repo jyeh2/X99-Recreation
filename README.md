@@ -23,6 +23,7 @@ roles/
   tailscale       apt repo, tailscaled, `tailscale up --ssh` when an auth key is given
   nvidia_cmp40hx  610.57.04 userspace (.run or apt), apt pin/holds, cmpunlocker build, Gen2 retrain unit,
                   idle clock cap unit, read-only verification
+  amdgpu_power    tag `amdgpu`: boot-time package power cap for the Radeon VII (matched by PCI ID)
   ollama          pinned install, systemd override env, model pulls
   cuda_toolkit    NVIDIA CUDA repo + cuda-toolkit-13-0 (dependency of the two below)
   mistralrs       optional, tag `mistralrs`: rustup + mistral.rs built for sm_75 (~55 min)
@@ -118,6 +119,7 @@ tailscaled and tells you to run `sudo tailscale up --ssh --hostname=kabangy` you
 | kernel update | the unlocker must be rebuilt for the new kernel *before* booting it (hook or `install.sh --no-download`), then cold boot |
 | Gen2 retrain unit | none to install; it acts on every boot. To apply now: `sudo cmp40hx-gen2-retrain --stop-services` |
 | ollama override | ollama restart (done by the role) |
+| Radeon VII power cap | none; the role applies it immediately and the unit reapplies it every boot. One-off: `sudo amdgpu-power-cap <watts>` |
 | BIOS changes | power cycle |
 
 The unlock is volatile: every power cycle returns the card to stock until the patched

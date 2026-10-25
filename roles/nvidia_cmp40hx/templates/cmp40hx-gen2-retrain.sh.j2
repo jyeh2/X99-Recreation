@@ -52,6 +52,20 @@ if [ ! -e "/sys/bus/pci/devices/$GPU_BDF" ]; then
     exit 0
 fi
 
+# The BDFs are fixed in the inventory, so a card moved to another slot leaves them
+# pointing at whatever took its place (on 2026-10-24 that was the Radeon VII's
+# PCIe switch). Never reprobe or retrain anything that isn't the CMP 40HX.
+gpu_id="$(cat "/sys/bus/pci/devices/$GPU_BDF/vendor" 2>/dev/null):$(cat "/sys/bus/pci/devices/$GPU_BDF/device" 2>/dev/null)"
+if [ "$gpu_id" != "0x10de:0x1f0b" ]; then
+    log "$GPU_BDF is $gpu_id, not a CMP 40HX (0x10de:0x1f0b); fix cmp40hx_gpu_bdf (lspci -nn -d 10de:1f0b). Skipping"
+    exit 0
+fi
+parent=$(basename "$(dirname "$(readlink -f "/sys/bus/pci/devices/$GPU_BDF")")")
+if [ "$parent" != "$ROOT_BDF" ]; then
+    log "$GPU_BDF sits behind $parent, not $ROOT_BDF; fix cmp40hx_root_port_bdf. Skipping"
+    exit 0
+fi
+
 # Wait until the patched driver has run its own Gen2 attempt. Without the
 # cmpunlocker module there is no Gen2 target set, and a retrain would just
 # come back at 2.5 GT/s.

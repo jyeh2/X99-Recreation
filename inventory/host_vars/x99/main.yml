@@ -16,8 +16,9 @@ tailscale_ssh: true
 tailscale_hostname: kabangy
 
 # ---- CMP 40HX ----
-cmp40hx_gpu_bdf: "0000:03:00.0"        # card in the 2nd (first full x16) slot
-cmp40hx_root_port_bdf: "0000:00:02.0"  # Haswell-EP root port 2 (8086:2f04)
+# Moved 2026-10-24 when the Radeon VII took root port 2 (it was 03:00.0 behind 00:02.0).
+cmp40hx_gpu_bdf: "0000:06:00.0"
+cmp40hx_root_port_bdf: "0000:00:03.0"  # Haswell-EP root port 3
 
 # Reboot-requiring steps. Leave false for routine runs; turn on with -e on a fresh install.
 cmp40hx_install_driver: false
@@ -37,6 +38,9 @@ cmp40hx_gen2_retrain_mode: masked
 # The retrain alone stays at 2.5 GT/s after a cold boot; the driver reprobe has to run
 # first (confirmed 2026-10-05). This box's checkout is ~/cmpunlocker, not /opt/cmpunlocker.
 cmp40hx_gen2_reprobe_src: /home/james/cmpunlocker/tools/cmp40hx-driver-reprobe-gen2.sh
+# No nvidia-persistenced on this box (the .run userspace doesn't install the unit), so
+# `cmp40hx-gen2-retrain --stop-services` only needs to stop ollama.
+cmp40hx_gen2_retrain_services: [ollama]
 
 # cap-cmp40hx.service: 300 MHz idle clock lock at boot (saves power). Release it before
 # inference work with `sudo cmp40hx-uncap` (nvidia-smi -rgc); re-apply with `sudo cmp40hx-cap`.
@@ -52,6 +56,11 @@ cmpunlocker_dest: /home/james/cmpunlocker
 cmpunlocker_repo: https://github.com/jyeh2/cmpunlocker.git
 
 # Ollama stays bound to localhost (OLLAMA_HOST unset); not reachable over the tailnet yet.
+
+# ---- Radeon VII ----
+# 05:00.0 behind root port 2. Stock and maximum cap is 250 W.
+amdgpu_power_cap_enabled: true
+amdgpu_power_cap_watts: 200
 
 # ---- Ollama ----
 ollama_version: "0.32.5"

@@ -1,0 +1,11 @@
+---
+# Package power cap (PPT) for AMD GPUs, applied at boot by amdgpu-power-cap.service.
+# The amdgpu cap is volatile; it resets to power1_cap_default on every boot.
+amdgpu_power_cap_enabled: false
+amdgpu_power_cap_watts: 200
+# PCI device IDs to cap. Matching by ID instead of BDF keeps it working when the card
+# changes slots (the Radeon VII has moved between root ports 2 and 3).
+#   0x66af -> Vega 20 [Radeon VII]
+amdgpu_power_cap_device_ids: ["0x66af"]
+# Seconds to wait for amdgpu to create the hwmon node.
+amdgpu_power_cap_wait: 60

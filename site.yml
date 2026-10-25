@@ -5,6 +5,7 @@
 #   .venv/bin/ansible-playbook site.yml -K -e cmp40hx_install_driver=true  # fresh install, step 1
 #   .venv/bin/ansible-playbook site.yml -K -e cmp40hx_build_unlocker=true  # fresh install, step 2 (then cold boot)
 #   .venv/bin/ansible-playbook site.yml -K --tags verify                   # post-boot checks
+#   .venv/bin/ansible-playbook site.yml -K --tags amdgpu                   # Radeon VII power cap
 #   .venv/bin/ansible-playbook site.yml -K --tags mistralrs                # optional ~1 h build
 #   .venv/bin/ansible-playbook site.yml -K --tags benchmarks               # optional bench tools
 #
@@ -21,6 +22,8 @@
       tags: [tailscale]
     - role: nvidia_cmp40hx
       tags: [nvidia, cmp40hx]
+    - role: amdgpu_power
+      tags: [amdgpu]
     - role: ollama
       tags: [ollama]
     - role: mistralrs
