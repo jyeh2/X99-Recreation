@@ -1,0 +1,17 @@
+2026-10-15 llama.cpp f498f86 RPC: host CMP 40HX (CUDA0, sm_75, unlocked) + V100 in VM via ggml-rpc-server 192.168.122.178:50052 (RPC0, sm_70, CUDA 12.9). fa=1, ngl=99 unless noted.
+| model                          |       size |     params | backend    | ngl |  fa | dev          |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | --: | ------------ | --------------: | -------------------: |
+| llama 7B Q4_0                  |   3.56 GiB |     6.74 B | CUDA,RPC   |  99 |   1 | CUDA0        |           pp512 |      1877.61 ± 37.76 |
+| llama 7B Q4_0                  |   3.56 GiB |     6.74 B | CUDA,RPC   |  99 |   1 | CUDA0        |           tg128 |         80.40 ± 0.16 |
+| llama 7B Q4_0                  |   3.56 GiB |     6.74 B | CUDA,RPC   |  99 |   1 | RPC0         |           pp512 |     2757.77 ± 137.39 |
+| llama 7B Q4_0                  |   3.56 GiB |     6.74 B | CUDA,RPC   |  99 |   1 | RPC0         |           tg128 |        127.32 ± 0.79 |
+| llama 7B Q4_0                  |   3.56 GiB |     6.74 B | CUDA,RPC   |  99 |   1 | CUDA0/RPC0   |           pp512 |     2376.00 ± 107.05 |
+| llama 7B Q4_0                  |   3.56 GiB |     6.74 B | CUDA,RPC   |  99 |   1 | CUDA0/RPC0   |           tg128 |         99.83 ± 0.27 |
+
+| model                          |       size |     params | backend    | ngl |  fa | dev          |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | --: | --: | ------------ | --------------: | -------------------: |
+| qwen3 32B Q4_K - Medium        |  18.40 GiB |    32.76 B | CUDA,RPC   |  99 |   1 | CUDA0/RPC0   |           pp512 |       478.11 ± 23.34 |
+| qwen3 32B Q4_K - Medium        |  18.40 GiB |    32.76 B | CUDA,RPC   |  99 |   1 | CUDA0/RPC0   |           tg128 |         24.37 ± 0.18 |
+wall 114.32 s
+| qwen3 32B Q4_K - Medium        |  18.40 GiB |    32.76 B | CUDA,RPC   |  50 |   1 | RPC0         |           pp512 |         42.19 ± 0.13 |
+| qwen3 32B Q4_K - Medium        |  18.40 GiB |    32.76 B | CUDA,RPC   |  50 |   1 | RPC0         |           tg128 |          5.74 ± 0.02 |

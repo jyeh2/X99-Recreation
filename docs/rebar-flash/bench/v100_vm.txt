@@ -1,0 +1,6 @@
+V100 SXM2 16GB in VFIO VM (v100, 192.168.122.178), closed 580.178.04-server, ollama 0.40.4, run from host 2026-10-15
+qwen3:8b (./llm.sh against 192.168.122.178:11434)
+prompt 1911 tok/s (1679 tok) | gen 104.5 tok/s
+prompt 2674 tok/s (1679 tok) | gen 106.0 tok/s
+prompt 2721 tok/s (1679 tok) | gen 106.2 tok/s
+after run: 1530 MHz SM, 51.6 W, 46 C, 5807 MiB used

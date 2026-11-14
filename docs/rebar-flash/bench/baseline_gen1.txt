@@ -1,0 +1,15 @@
+Fri Oct  2 07:20:20 AM UTC 2026
+pcie.link.gen.current, pcie.link.width.current, clocks.max.sm [MHz], clocks.max.memory [MHz], power.limit [W]
+1, 16, 2100 MHz, 7001 MHz, 184.00 W
+        Total                                          : 64 MiB
+pinned   H2D 3.14 GB/s
+pinned   D2H 3.35 GB/s
+pageable H2D 3.12 GB/s
+pageable D2H 3.32 GB/s
+qwen3:8b load: 4.88 5.02 4.97 5.03 4.97
+gemma4:e4b load: 7.82 7.69 7.74
+--- added after learning the plan is cmpunlocker (compute + Gen2 + ReBAR), driver 580.178.04 stock
+FP32 GEMM 7.14 TFLOPS
+FP16 GEMM 0.98 TFLOPS
+qwen3:8b   prompt ~121 tok/s (1679 tok) | gen ~30.6 tok/s
+gemma4:e4b prompt ~211 tok/s (1522 tok) | gen ~37.7 tok/s
