@@ -28,7 +28,7 @@
     dest: /etc/apt/preferences.d/cmp40hx-no-apt-driver
     mode: "0644"
     content: |
-      # Managed by homelab-ansible (roles/nvidia_cmp40hx); local edits are overwritten.
+      # Managed by x99-recreation (roles/nvidia_cmp40hx); local edits are overwritten.
       # The NVIDIA userspace is the {{ cmp40hx_driver_upstream_version }} .run (--no-kernel-modules)
       # and the kernel modules are cmpunlocker's. apt driver packages would replace both.
       Package: {{ cmp40hx_apt_block_patterns | join(' ') }}

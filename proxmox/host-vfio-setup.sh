@@ -9,7 +9,8 @@
 #   2. Builds vendor-reset (DKMS) so the card can reset between VM runs (Vega 20 reset bug).
 #   3. Adds iommu=pt and turns off the boot framebuffer (the Radeon is the boot GPU).
 #   4. Enables "snippets" and "import" on the local storage and installs the hookscript.
-#   5. Installs Terraform from HashiCorp's apt repo.
+#   5. Installs gpu-vm-autostart: at boot, starts the VM for each GPU that is installed.
+#   6. Installs Terraform from HashiCorp's apt repo.
 #
 # Side effect: the host's monitor output stops after GRUB. The host is headless over Wi-Fi anyway.
 # Recovery if something goes wrong: at the GRUB menu press 'e', add
@@ -80,6 +81,14 @@ pvesm set local --content "$NEW"
 echo "local content: $NEW"
 install -d /var/lib/vz/snippets
 install -m 0755 "$HERE/hookscripts/radeon-vfio.sh" /var/lib/vz/snippets/radeon-vfio.sh
+
+echo "== GPU -> VM autostart at boot"
+install -m 0755 "$HERE/gpu-vms/gpu-vm-autostart.sh" /usr/local/sbin/gpu-vm-autostart
+install -m 0644 "$HERE/gpu-vms/gpu-vm-autostart.service" /etc/systemd/system/gpu-vm-autostart.service
+# Keep local edits to the table on re-runs.
+[ -e /etc/gpu-vms.conf ] || install -m 0644 "$HERE/gpu-vms/gpu-vms.conf" /etc/gpu-vms.conf
+systemctl daemon-reload
+systemctl enable gpu-vm-autostart.service
 
 echo "== Terraform"
 if ! command -v terraform >/dev/null; then

@@ -1,4 +1,4 @@
-# homelab-ansible
+# x99-recreation
 
 Ansible for **kabangy**, the X99 home LLM inference server: a Huananzhi X99-BD4 board,
 a Xeon E5-2678 v3, Ubuntu 24.04.5 (HWE kernel 7.0; was 22.04.5 / 5.15 until 2026-10-17), headless, on Tailscale, with an NVIDIA
@@ -77,7 +77,7 @@ you install Ubuntu, so the installer creates an ESP.
 
 # 2. Get this repo and Ansible
 sudo apt update && sudo apt install -y git python3-venv
-git clone <this repo> ~/homelab-ansible && cd ~/homelab-ansible
+git clone <this repo> ~/x99-recreation && cd ~/x99-recreation
 python3 -m venv .venv && .venv/bin/pip install ansible-core
 
 # 3. Secrets

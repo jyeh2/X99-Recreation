@@ -10,15 +10,23 @@ resource "proxmox_download_file" "ubuntu_noble" {
 
 resource "proxmox_virtual_environment_vm" "llm_radeon" {
   name        = "llm-radeon"
-  description = "Radeon VII (gfx906) inference VM. Managed by Terraform in homelab-ansible/proxmox/terraform."
+  description = "Radeon VII (gfx906) inference VM. Managed by Terraform in x99-recreation/proxmox/terraform."
   tags        = ["gpu", "terraform"]
   node_name   = var.node_name
   vm_id       = var.radeon_vm.vm_id
 
   machine = "q35"
   bios    = "ovmf"
-  on_boot = true
+  # Proxmox's own autostart is off: gpu-vm-autostart.service starts this VM at boot
+  # only when the Radeon is actually on the bus (proxmox/gpu-vms/).
+  on_boot = false
   started = true
+
+  # gpu-vm-autostart rewrites hostpci0 when the card shows up at a new bus address, and
+  # starts/stops follow the card, so Terraform leaves both alone after creating the VM.
+  lifecycle {
+    ignore_changes = [hostpci, started]
+  }
 
   # Checks the card and its vfio/reset state before every start (proxmox/hookscripts/radeon-vfio.sh).
   hook_script_file_id = "local:snippets/radeon-vfio.sh"

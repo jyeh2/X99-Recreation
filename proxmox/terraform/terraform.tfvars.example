@@ -2,4 +2,4 @@
 ssh_public_keys = [
   "ssh-ed25519 AAAA... you@laptop",
 ]
-# node_name = "kabangy"
+# node_name = "kabangy-pve"

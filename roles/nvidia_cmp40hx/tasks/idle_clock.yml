@@ -14,7 +14,7 @@
         mode: "0755"
         content: |
           #!/bin/bash
-          # Managed by homelab-ansible (roles/nvidia_cmp40hx); local edits are overwritten.
+          # Managed by x99-recreation (roles/nvidia_cmp40hx); local edits are overwritten.
           # {{ item.doc }}
           set -euo pipefail
           {{ item.cmd }}

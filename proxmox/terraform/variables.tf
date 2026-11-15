@@ -1,7 +1,7 @@
 variable "node_name" {
   description = "Proxmox node name (hostname of the host)."
   type        = string
-  default     = "kabangy"
+  default     = "kabangy-pve"
 }
 
 variable "ssh_public_keys" {

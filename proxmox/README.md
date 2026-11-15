@@ -93,3 +93,22 @@ The Radeon (05:00.0) and its HDMI audio (05:00.1) each sit alone in their own IO
   boot, but a stop/start may need a host reboot. `journalctl -t radeon-vfio*` shows what happened.
 - RAM: 6 GB is reserved for the VM whenever it runs (no ballooning with passthrough).
 - Models: the VM can't use the `/srv/models` bind mount. Use virtiofs (directory mapping) or copy them in. Not wired up yet.
+
+## GPU-driven VM startup (`gpu-vms/`)
+
+At boot, `gpu-vm-autostart.service` (installed by `host-vfio-setup.sh`) reads `/etc/gpu-vms.conf`:
+
+```
+1002:66af  111  llm-radeon    # Radeon VII
+#10de:1f0b  112  llm-cmp      # CMP 40HX (VM not built yet)
+```
+
+For each line, if a card with that PCI ID is on the bus, it points the VM's `hostpci0` at the card's
+current address and starts the VM. If the card isn't there, the VM stays off. So pulling a card or moving it
+to another slot needs no config change. GPU VMs have Proxmox's own `onboot` turned off, and Terraform
+ignores `hostpci`/`started` after creation, so the service is the only thing deciding.
+
+- What happened on this boot: `journalctl -b -t gpu-vm-autostart`
+- Dry run: `DRY_RUN=1 gpu-vm-autostart`
+- New GPU VM: build it (Terraform), then add its line to `/etc/gpu-vms.conf`. Only the first card with a
+  given ID is used.
