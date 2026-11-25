@@ -1,7 +1,0 @@
----
-# ROCm userspace for the Radeon VII (gfx906) on Ubuntu 24.04 with the in-tree amdgpu.
-# 6.3.3 is the last release whose rocBLAS ships gfx906 kernels (6.4.x has none).
-rocm_version: "6.3.3"
-# The cloud image's kernel may lack amdgpu; HWE 7.0 is what this card ran on before.
-rocm_kernel_package: linux-generic-hwe-24.04
-rocm_users: ["{{ homelab_user }}"]

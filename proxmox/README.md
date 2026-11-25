@@ -30,9 +30,9 @@ one associated MAC. So:
 router ── Wi-Fi ── host wlxf0a731dbd1b7 (DHCP from the router)
                      │ NAT (iptables MASQUERADE, post-up on vmbr0)
                   vmbr0 10.10.10.1/24, bridge-ports none (internal only)
-                  ├─ llm-radeon 10.10.10.11  VM 111, Radeon VII via VFIO passthrough (Terraform)
+                  ├─ llm-radeon 10.10.10.11  LXC, Radeon VII (/dev/kfd + its renderD node)
                   ├─ llm-cmp    10.10.10.12  LXC, CMP 40HX (/dev/nvidia*)
-                  └─ jobs       10.10.10.13  LXC 103, no GPU, Claude job pipeline
+                  └─ jobs       10.10.10.13  LXC 103, Claude job pipeline
 ```
 
 - Wi-Fi adapter: TP-Link USB, RTL8822BU, driver `rtw88_8822bu`. Firmware is in `pve-firmware`.
@@ -69,46 +69,8 @@ reset bug doesn't come up. Revisit after adding 2x8 GB RDIMMs.
 - models → `/srv/models` on the host, bind-mounted read-only at `/models` in llm-radeon (101) and
   llm-cmp (102). One copy serves both.
 - cmpunlocker + the NVIDIA .run → `/root/cmpunlocker`, for building the host driver.
-- Resume, browser profile, secrets, SSH keys, Claude memory, repos, PDFs → the jobs VM's `/home/james`
+- Resume, browser profile, secrets, SSH keys, Claude memory, repos, PDFs → the jobs container's `/home/james`
   over vmbr0. Same path as before, so `~/.claude/projects/-home-james/memory` still works.
 
 Run it with `DRY_RUN=1` first. After the NVMe is wiped, put a filesystem on it, mount it at
 `/srv/models`, and rsync the models back. The containers' `/models` doesn't change.
-
-## llm-radeon VM (Radeon VII passthrough)
-
-Changed 2026-11-14: the Radeon VII goes to its own VM instead of an LXC. The CMP stays an LXC for now.
-The Radeon (05:00.0) and its HDMI audio (05:00.1) each sit alone in their own IOMMU groups, so no ACS override is needed.
-
-1. On the host, as root: `bash proxmox/host-vfio-setup.sh`, then reboot. Check that `lspci -nnk -s 05:00.0` says
-   `vfio-pci`. The host monitor goes dark after GRUB from now on (see the script header for recovery).
-2. On the host: `cd proxmox/terraform`, export `PROXMOX_VE_USERNAME=root@pam` and `PROXMOX_VE_PASSWORD`,
-   copy `terraform.tfvars.example` to `terraform.tfvars` (SSH keys), then `terraform init && terraform apply`.
-3. From the jobs LXC: `.venv/bin/ansible-playbook radeon.yml` (HWE kernel, ROCm 6.3.3, 200 W cap).
-
-- `hookscripts/radeon-vfio.sh` runs before each start. It refuses to start the VM if the card isn't at the
-  `hostpci0` address (bus numbers shift when a card drops off), and puts the card on vfio-pci with
-  vendor-reset's `device_specific` reset method.
-- Vega 20 has a reset bug. If vendor-reset doesn't build on the pve kernel, the VM starts fine once per host
-  boot, but a stop/start may need a host reboot. `journalctl -t radeon-vfio*` shows what happened.
-- RAM: 6 GB is reserved for the VM whenever it runs (no ballooning with passthrough).
-- Models: the VM can't use the `/srv/models` bind mount. Use virtiofs (directory mapping) or copy them in. Not wired up yet.
-
-## GPU-driven VM startup (`gpu-vms/`)
-
-At boot, `gpu-vm-autostart.service` (installed by `host-vfio-setup.sh`) reads `/etc/gpu-vms.conf`:
-
-```
-1002:66af  111  llm-radeon    # Radeon VII
-#10de:1f0b  112  llm-cmp      # CMP 40HX (VM not built yet)
-```
-
-For each line, if a card with that PCI ID is on the bus, it points the VM's `hostpci0` at the card's
-current address and starts the VM. If the card isn't there, the VM stays off. So pulling a card or moving it
-to another slot needs no config change. GPU VMs have Proxmox's own `onboot` turned off, and Terraform
-ignores `hostpci`/`started` after creation, so the service is the only thing deciding.
-
-- What happened on this boot: `journalctl -b -t gpu-vm-autostart`
-- Dry run: `DRY_RUN=1 gpu-vm-autostart`
-- New GPU VM: build it (Terraform), then add its line to `/etc/gpu-vms.conf`. Only the first card with a
-  given ID is used.

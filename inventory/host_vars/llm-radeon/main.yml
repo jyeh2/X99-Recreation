@@ -1,4 +1,0 @@
----
-# Radeon VII VM (Proxmox VM 111, created by proxmox/terraform).
-amdgpu_power_cap_enabled: true
-amdgpu_power_cap_watts: 200
