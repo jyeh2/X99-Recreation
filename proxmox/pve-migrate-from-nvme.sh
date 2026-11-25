@@ -35,7 +35,7 @@ mount -o ro /dev/ubuntu-vg/ubuntu-lv "$SRC" 2>/dev/null || mount -o ro,norecover
 
 # 2. models -> host, shared into both LLM containers
 mkdir -p "$MODELS"
-"${RSYNC[@]}" "$H/models/qwen3-32b" "$MODELS/"
+"${RSYNC[@]}" "$H/models/qwen3-32b" "$H/models/qwen3-4b" "$MODELS/"
 chmod -R a+rX "$MODELS"
 if [ "${DRY_RUN:-0}" != 1 ]; then
   for ct in "$RADEON_CT" "$CMP_CT"; do

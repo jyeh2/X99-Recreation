@@ -9,6 +9,7 @@ BR_ADDR="10.10.10.1/24"
 BR_NET="10.10.10.0/24"
 KIT="${KIT:-/home/james/Downloads/proxmox/wifi-debs}"   # offline .debs: wpasupplicant iw libnl-genl-3-200 libpcsclite1 libreadline8t64 readline-common (Debian 13)
 MNT=/mnt/pve
+HERE_TS="${HERE_TS:-/home/james/Downloads/proxmox/tailscale-deb}"   # tailscale_1.104.7_amd64.deb (Debian 13, sha256 verified)
 
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
 model=$(lsblk -dno MODEL /dev/sda | xargs)
@@ -24,31 +25,68 @@ trap cleanup EXIT
 
 vgchange -ay pve >/dev/null
 mkdir -p "$MNT"
+for m in dev/pts dev sys proc; do mountpoint -q "$MNT/$m" && umount "$MNT/$m"; done
+mountpoint -q "$MNT" && umount "$MNT"
 mount /dev/pve/root "$MNT"
 [ -f "$MNT/etc/pve/.version" ] || [ -d "$MNT/etc/pve" ] || { echo "that doesn't look like a Proxmox root"; exit 1; }
 for m in proc sys dev dev/pts; do mount --bind "/$m" "$MNT/$m"; done
 
-read -rp  "Wi-Fi network name (SSID): " SSID
-read -rsp "Wi-Fi password: " PASS; echo
 umask 077
 mkdir -p "$MNT/etc/wpa_supplicant"
-wpa_passphrase "$SSID" "$PASS" | grep -v '^\s*#psk=' > "$MNT/etc/wpa_supplicant/wpa_supplicant.conf"
-unset PASS
+UBU_WPA="/run/netplan/wpa-$WIFI_IF.conf"   # the config Ubuntu is connected with right now
+if [ -s "$UBU_WPA" ]; then
+  cp "$UBU_WPA" "$MNT/etc/wpa_supplicant/wpa_supplicant.conf"
+  echo "Wi-Fi: copied Ubuntu's working config ($(grep -m1 -o 'key_mgmt=[A-Z0-9-]*' "$UBU_WPA" || echo 'key_mgmt default'))"
+else
+  read -rp  "Wi-Fi network name (SSID): " SSID
+  read -rsp "Wi-Fi password: " PASS; echo
+  wpa_passphrase "$SSID" "$PASS" | grep -v '^\s*#psk=' > "$MNT/etc/wpa_supplicant/wpa_supplicant.conf"
+  unset PASS
+fi
 umask 022
 
-install -m 755 "$(dirname "$0")/pve-migrate-from-nvme.sh" "$MNT/root/" 2>/dev/null || true
+# Tailscale: carry this machine's identity over, so Proxmox comes up at the same Tailscale address.
+# Safe because Ubuntu and Proxmox run on the same hardware and never at the same time.
+TS_DEB=$(ls "$HERE_TS"/tailscale_*_amd64.deb 2>/dev/null | head -1 || true)
+read -rp "Copy Tailscale identity so Proxmox is reachable at $(tailscale ip -4 2>/dev/null | head -1)? [Y/n] " TSA
+if [ -n "$TS_DEB" ] && [ "${TSA:-y}" != n ] && [ -f /var/lib/tailscale/tailscaled.state ]; then
+  cp "$TS_DEB" "$MNT/root/"
+  DEBIAN_FRONTEND=noninteractive chroot "$MNT" dpkg -i "/root/$(basename "$TS_DEB")"
+  mkdir -p "$MNT/var/lib/tailscale"
+  cp -a /var/lib/tailscale/. "$MNT/var/lib/tailscale/"
+  chroot "$MNT" systemctl enable tailscaled >/dev/null 2>&1 || true
+  echo "Tailscale: installed and identity copied (reach Proxmox at the same Tailscale address/name)"
+else
+  echo "Tailscale: skipped. The first boot needs a monitor on the Radeon VII."
+fi
+
+# Stage the first-boot kit: scripts for /root, plus Ubuntu's working Radeon power-cap script/unit.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+install -d "$MNT/root/kit"
+for f in pve-first-boot.sh pve-migrate-from-nvme.sh; do install -m 755 "$HERE/$f" "$MNT/root/"; done
+install -m 755 "$HERE/ct-radeon-setup.sh" "$MNT/root/kit/"
+install -m 755 /usr/local/sbin/amdgpu-power-cap "$MNT/root/kit/"
+install -m 644 /etc/systemd/system/amdgpu-power-cap.service "$MNT/root/kit/"
 mkdir -p "$MNT/root/wifi-kit"
 cp "$KIT"/*.deb "$MNT/root/wifi-kit/"
 DEBIAN_FRONTEND=noninteractive chroot "$MNT" sh -c 'dpkg -i /root/wifi-kit/*.deb'
 chroot "$MNT" dpkg -s wpasupplicant | grep -q '^Status: install ok installed'
 
-cp -a "$MNT/etc/network/interfaces" "$MNT/etc/network/interfaces.installer"
+# The installer may have pinned QEMU's virtual NIC (MAC 52:54:00:12:34:56) as nic0. It doesn't exist on the real box.
+for d in "$MNT/usr/local/lib/systemd/network" "$MNT/etc/systemd/network"; do
+  [ -d "$d" ] || continue
+  for f in "$d"/*.link; do
+    [ -f "$f" ] && grep -qi '52:54:00:12:34:56' "$f" || continue
+    mv "$f" "$f.qemu-disabled" && echo "disabled QEMU NIC pin: ${f#$MNT}"
+  done
+done
+[ -e "$MNT/etc/network/interfaces.installer" ] || cp -a "$MNT/etc/network/interfaces" "$MNT/etc/network/interfaces.installer"
 cat > "$MNT/etc/network/interfaces" <<EOF
 # Written by pve-wifi-setup.sh. Installer's original: interfaces.installer
 auto lo
 iface lo inet loopback
 
-# Host uplink: Wi-Fi client, address from the home router
+# Host uplink: Wi-Fi client (apartment Wi-Fi, clients isolated), address via DHCP
 auto $WIFI_IF
 iface $WIFI_IF inet dhcp
     wpa-conf /etc/wpa_supplicant/wpa_supplicant.conf
@@ -71,7 +109,7 @@ EOF
 
 # Proxmox needs its hostname to resolve to an address that always exists: use the bridge.
 HN=$(cat "$MNT/etc/hostname")
-cp -a "$MNT/etc/hosts" "$MNT/etc/hosts.installer"
+[ -e "$MNT/etc/hosts.installer" ] || cp -a "$MNT/etc/hosts" "$MNT/etc/hosts.installer"
 sed -i "/[[:space:]]${HN%%.*}\([[:space:]]\|$\)/d" "$MNT/etc/hosts"
 sed -i "1a ${BR_ADDR%/*} ${HN}.lan ${HN%%.*}" "$MNT/etc/hosts"
 
